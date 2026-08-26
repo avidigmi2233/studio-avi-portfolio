@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "site",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["/Users/avidigmi/Desktop/Claude/Projects/אתר תיק עבודות אבי/serve.py"],
+      "port": 4321
+    }
+  ]
+}
