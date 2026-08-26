@@ -225,27 +225,25 @@ function Reveal({
 }
 
 /* ========================== סמל המותג ========================== */
-/* הערה: אייקון המוח החדש טרם סופק — זהו הסמל הנוכחי (שער + S/A עם "הד" תלת-ממדי). */
+/* מוח קווי לבן — שתי המיספרות עם קווי מתאר מפורצים, בקע אורכי ושתי פאות
+   תלת-ממדיות. לבן מלא, בלי צבע מותג, בשפת הרפרנס. */
 function BrandMark({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 40 38" fill="none" aria-hidden="true" className={cn("block h-full w-full overflow-visible", className)}>
-      <path
-        d="M3.4 36.4V16.6a16.6 16.6 0 0 1 33.2 0v19.8"
-        transform="translate(1.7 1.5)"
-        className="stroke-dim opacity-50"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
-      <path d="M3.4 36.4V16.6a16.6 16.6 0 0 1 33.2 0v19.8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-      <path
-        d="M17.9 12.9c-1.3-1.2-3-1.7-4.5-1.3-1.9.5-2.7 2.2-2 3.6.8 1.6 3.7 1.6 4.8 3 .9 1.2.5 3-1.2 3.6-1.6.6-3.6 0-5-1.3"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path d="m22.4 21.6 4-10.4 4 10.4M23.9 18.3h5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="20" cy="30.4" r="2.6" className="fill-dim animate-pulse-dot [transform-box:fill-box] [transform-origin:center]" />
+    <svg
+      viewBox="0 0 40 40"
+      fill="none"
+      aria-hidden="true"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={cn("block h-full w-full overflow-visible", className)}
+    >
+      <path d="M20 5C16 4 12 6 11.5 10C8 10.5 7 14 8.5 17C6.5 19 7 23 9.5 24.5C9.5 28 13 30.5 16.5 30C17.5 31 19 31.5 20 31.5" />
+      <path d="M20 5C24 4 28 6 28.5 10C32 10.5 33 14 31.5 17C33.5 19 33 23 30.5 24.5C30.5 28 27 30.5 23.5 30C22.5 31 21 31.5 20 31.5" />
+      <path d="M20 5V31.5" />
+      <path d="M11.5 10L20 15L28.5 10" className="opacity-70 transition-opacity duration-500 group-hover:opacity-100" />
+      <path d="M8.5 17L20 22L31.5 17" className="opacity-70 transition-opacity duration-500 group-hover:opacity-100" />
     </svg>
   );
 }
@@ -485,7 +483,7 @@ function TopRail({
         }}
       />
       <button onClick={onLogo} aria-label="סטודיו אבי — לראש העמוד" className="group inline-flex items-center gap-3 text-foreground">
-        <span className="h-[30px] w-[30px] shrink-0 text-gold transition-colors duration-500 group-hover:text-gold-hi max-md:h-[26px] max-md:w-[26px] [filter:drop-shadow(0_0_16px_hsl(var(--gold)/0.42))_drop-shadow(0_0_10px_hsl(var(--dim)/0.3))]">
+        <span className="h-[30px] w-[30px] shrink-0 text-foreground transition-[filter] duration-500 max-md:h-[26px] max-md:w-[26px] [filter:drop-shadow(0_0_14px_hsl(var(--foreground)/0.28))] group-hover:[filter:drop-shadow(0_0_20px_hsl(var(--foreground)/0.45))]">
           <BrandMark />
         </span>
         <span className="font-display text-[12.5px] font-bold tracking-[0.12em] max-md:text-[10.5px]">סטודיו אבי</span>

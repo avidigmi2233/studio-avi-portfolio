@@ -140,15 +140,15 @@ body.scrolled .rail--top::before{opacity:1}
 
 /* לוגו */
 .brand{display:inline-flex;align-items:center;gap:12px;text-decoration:none;color:var(--ink)}
-.brand-mark{width:30px;height:30px;flex:0 0 auto;color:var(--gold);
-  filter:drop-shadow(0 0 16px rgba(232,196,138,.42)) drop-shadow(0 0 10px rgba(var(--dim-rgb),.3));
-  transition:color .45s ease}
+/* סמל המוח — לבן מלא, בשפת הרפרנס: קו אחיד, מינימלי, בלי צבע */
+.brand-mark{width:30px;height:30px;flex:0 0 auto;color:var(--ink);
+  filter:drop-shadow(0 0 14px rgba(247,242,234,.28));
+  transition:filter .45s ease}
 .brand-mark svg{width:100%;height:100%;display:block;overflow:visible}
-.bm-arch-echo{stroke:var(--dim);opacity:.5}
-.bm-dot{fill:var(--dim);transform-box:fill-box;transform-origin:center;animation:pulse 3.4s ease-in-out infinite}
-.bm-s,.bm-a{transition:opacity .45s ease}
-.brand:hover .brand-mark{color:var(--gold-hi)}
-@keyframes pulse{0%,100%{opacity:.45;transform:scale(.72)}50%{opacity:1;transform:scale(1.08)}}
+/* הפאות עדינות יותר מקווי המתאר — עומק בלי רעש */
+.bm-facet{opacity:.72;transition:opacity .45s ease}
+.brand:hover .brand-mark{filter:drop-shadow(0 0 20px rgba(247,242,234,.45))}
+.brand:hover .bm-facet{opacity:1}
 .brand-name{font-family:var(--display);font-size:12.5px;font-weight:700;letter-spacing:.12em;direction:rtl}
 .brand-dot{color:var(--gold)}
 
@@ -704,7 +704,7 @@ body.calm .rv{opacity:1;transform:none}
     background:linear-gradient(transparent,rgba(4,5,10,.62) 38%,rgba(4,5,10,.96))}
 }
 @media (prefers-reduced-motion:reduce){
-  .grain,.proj-card,.btn-ring,.bm-dot,.scroll-cue i{animation:none}
+  .grain,.proj-card,.btn-ring,.scroll-cue i{animation:none}
   .faq details[open] .faq-a{animation:none}
   .menu,.menu-list li,.pager-now{transition-duration:.01ms}
   .rv,.reveal-1,.reveal-2,.reveal-3{opacity:1;transform:none;animation:none}
