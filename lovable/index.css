@@ -1,0 +1,106 @@
+/* ==========================================================================
+   סטודיו אבי — טוקנים לעיצוב (למיזוג לתוך src/index.css של Lovable)
+   כל הצבעים כערוצי HSL גולמיים, לפי מוסכמת shadcn/Lovable.
+   ========================================================================== */
+
+@font-face {
+  font-family: "Polin";
+  src: url("/fonts/Polin-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Polin";
+  src: url("/fonts/Polin-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@layer base {
+  :root {
+    /* --- בסיס --- */
+    --background: 225 29% 3%;
+    --foreground: 37 45% 94%;
+    --stage: 230 43% 3%;           /* רקע שכבת הווידאו */
+    --ink-2: 36 26% 81%;           /* טקסט גוף */
+    --ink-3: 36 14% 61%;           /* טקסט משני */
+    --muted-ink: 36 10% 47%;       /* מיקרו-טקסט */
+    --ink-inverse: 36 33% 6%;      /* טקסט על משטח זהב מלא */
+
+    /* --- זהב: הצבע הראשי (קולנוע, פרימיום, קרפט) --- */
+    --gold: 37 67% 73%;
+    --gold-hi: 38 100% 89%;
+    --gold-dp: 34 44% 51%;
+
+    /* --- תלת מימד: הצבע המשני (חתימת הבידול) --- */
+    --dim: 198 100% 75%;
+    --dim-hi: 195 100% 89%;
+    --dim-dp: 201 71% 52%;
+
+    /* --- מיפוי סמנטי ל-shadcn --- */
+    --primary: 37 67% 73%;
+    --primary-foreground: 36 33% 6%;
+    --secondary: 198 100% 75%;
+    --secondary-foreground: 36 33% 6%;
+    --accent: 37 67% 73%;
+    --accent-foreground: 36 33% 6%;
+    --muted: 225 20% 10%;
+    --muted-foreground: 36 14% 61%;
+    --card: 222 27% 4%;
+    --card-foreground: 37 45% 94%;
+    --popover: 222 27% 4%;
+    --popover-foreground: 37 45% 94%;
+    --border: 37 67% 73%;          /* נצרך עם אלפא: border-border/20 */
+    --input: 37 45% 94%;
+    --ring: 37 67% 73%;
+    --destructive: 7 69% 65%;
+    --destructive-foreground: 10 77% 74%;
+
+    --radius: 1rem;
+
+    /* --- עזרי מערכת --- */
+    --frame: 14px;                 /* מרחק המסגרת מקצה המסך */
+    --frame-r: 12px;
+    --gut: clamp(20px, 5vw, 72px);
+    --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    overflow-x: clip;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Polin", "Arial Hebrew", system-ui, sans-serif;
+    font-synthesis: none;
+    overflow-x: clip;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body.is-locked {
+    overflow: hidden;
+    height: 100dvh;
+  }
+
+  ::selection {
+    background: hsl(var(--gold));
+    color: hsl(var(--ink-inverse));
+  }
+
+  :focus-visible {
+    outline: 2px solid hsl(var(--gold));
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+}
+
+@media (max-width: 820px) {
+  :root {
+    --frame: 8px;
+    --frame-r: 9px;
+  }
+}
