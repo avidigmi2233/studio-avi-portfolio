@@ -6,9 +6,18 @@
    עושה נייטיב. התוצאה: ~33MB במקום 52MB, טעינה בזרימה במקום preload מלא.
    ========================================================================== */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUpRight, Plus, RotateCcw } from "lucide-react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  ArrowDown, ArrowUpRight, Plus, RotateCcw,
+  Film, Boxes, Target, ShoppingBag, Palette,
+  Code2, Gauge, Infinity as InfinityIcon,
+  PhoneCall, PenTool, Rocket, Sparkles,
+} from "lucide-react";
+import { gsap } from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { cn } from "@/lib/utils";
+
+gsap.registerPlugin(ScrollTrigger);
 
 /* ========================== תוכן ========================== */
 
@@ -114,6 +123,12 @@ const SERVICES = [
   { num: "05", h: "מיתוג דיגיטלי מלא", p: "שפה חזותית, טיפוגרפיה עברית, מוטיבים, אנימציה ותלת מימד — מערכת שלמה שעובדת בכל מסך ובכל מדיה." },
 ];
 
+/** אייקונים לכרטיסי השירות — לפי הסדר ב-SERVICES */
+const SERVICE_ICONS = [Film, Boxes, Target, ShoppingBag, Palette];
+/** אייקונים לפס המספרים ולשלבי התהליך */
+const STAT_ICONS = [Code2, Gauge, InfinityIcon];
+const STEP_ICONS = [PhoneCall, PenTool, Sparkles, Rocket];
+
 const STATS = [
   { b: "100%", s: "קוד בהתאמה אישית" },
   { b: "1.2s", s: "זמן טעינה ממוצע" },
@@ -176,52 +191,126 @@ function useReducedMotion() {
   return calm;
 }
 
-/** חשיפה בגלילה — מחליף את מנגנון ה-.rv/.in המקורי */
-function Reveal({
+/* ========================== פרימיטיבים עיצוביים ==========================
+   שלושה מוטיבים מהרפרנס: מפריד מעוטר עם נקודת אור, מסגרת-גרדיאנט זהב,
+   ובריכת אור בתחתית הכרטיס. הם מה שמעלה את הנראות מ"נקי" ל"מוקפד".
+   ======================================================================= */
+
+/** מפריד מעוטר — קו זהב דק שנמוג לצדדים עם מעוין זוהר במרכז */
+function Ornament({ className, w = "w-16" }: { className?: string; w?: string }) {
+  return (
+    <span aria-hidden className={cn("inline-flex items-center gap-3", className)}>
+      <span className={cn("h-px bg-gradient-to-l from-gold/55 to-transparent", w)} />
+      <span className="h-[5px] w-[5px] rotate-45 bg-gold shadow-[0_0_10px_hsl(var(--gold)),0_0_20px_hsl(var(--gold)/0.5)]" />
+      <span className={cn("h-px bg-gradient-to-r from-gold/55 to-transparent", w)} />
+    </span>
+  );
+}
+
+/**
+ * כרטיס עם מסגרת-גרדיאנט ובריכת אור.
+ * המסגרת נבנית משכבת גרדיאנט ברוחב 1px (טכניקת p-px) — לא border רגיל,
+ * כי border לא תומך בגרדיאנט. הזוהר התחתון הוא אליפסה מטושטשת.
+ */
+function GlowCard({
   children,
+  accent = "gold",
   className,
-  delay = 0,
-  as: Tag = "div",
+  innerClassName,
+  bloom = true,
 }: {
   children: React.ReactNode;
+  accent?: "gold" | "dim";
   className?: string;
-  delay?: number;
-  as?: React.ElementType;
+  innerClassName?: string;
+  bloom?: boolean;
 }) {
-  const ref = useRef<HTMLElement>(null);
-  const [seen, setSeen] = useState(false);
-  const calm = useReducedMotion();
+  const ref = useRef<HTMLDivElement>(null);
+  const fine = useFinePointer();
+  const v = accent === "dim" ? "var(--dim)" : "var(--gold)";
 
-  useEffect(() => {
-    if (calm) return setSeen(true);
-    const el = ref.current;
-    if (!el) return;
-    const io = new IntersectionObserver(
-      ([e]) => {
-        if (e.isIntersecting) {
-          setSeen(true);
-          io.disconnect();
-        }
-      },
-      { threshold: 0.15, rootMargin: "0px 0px -8% 0px" }
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, [calm]);
+  const onMove = (e: React.PointerEvent) => {
+    if (!fine || !ref.current) return;
+    const r = ref.current.getBoundingClientRect();
+    ref.current.style.setProperty("--mx", `${((e.clientX - r.left) / r.width) * 100}%`);
+    ref.current.style.setProperty("--my", `${((e.clientY - r.top) / r.height) * 100}%`);
+  };
 
   return (
-    <Tag
-      ref={ref as never}
+    <div
+      ref={ref}
+      onPointerMove={onMove}
+      onPointerLeave={() => {
+        ref.current?.style.removeProperty("--mx");
+        ref.current?.style.removeProperty("--my");
+      }}
+      style={{ ["--a" as string]: v }}
       className={cn(
-        "transition-[opacity,transform] duration-[1100ms] ease-cinematic",
-        seen ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10",
+        "group/card relative rounded-2xl p-px transition-transform duration-500 ease-cinematic hover:-translate-y-1.5",
+        "[--mx:50%] [--my:0%]",
+        "bg-[linear-gradient(180deg,hsl(var(--a)/0.34),hsl(var(--a)/0.06)_38%,transparent_72%)]",
+        "hover:bg-[linear-gradient(180deg,hsl(var(--a)/0.6),hsl(var(--a)/0.12)_38%,transparent_72%)]",
         className
       )}
-      style={{ transitionDelay: seen ? `${delay}ms` : "0ms" }}
     >
-      {children}
-    </Tag>
+      <div
+        className={cn(
+          "relative h-full overflow-hidden rounded-2xl bg-[hsl(224_28%_5%/0.82)] backdrop-blur-xl",
+          innerClassName
+        )}
+      >
+        {/* ספוטלייט עוקב-סמן */}
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-500 group-hover/card:opacity-100"
+          style={{ background: `radial-gradient(300px circle at var(--mx) var(--my),hsl(var(--a)/0.14),transparent 70%)` }}
+        />
+        {/* בריכת אור תחתונה — החתימה של הרפרנס */}
+        {bloom && (
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-x-[18%] -bottom-10 h-20 rounded-[50%] opacity-45 blur-2xl transition-opacity duration-500 group-hover/card:opacity-90"
+            style={{ background: `hsl(var(--a)/0.55)` }}
+          />
+        )}
+        {/* קו אור על השפה העליונה */}
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-l from-transparent via-[hsl(var(--a)/0.5)] to-transparent opacity-60"
+        />
+        <div className="relative">{children}</div>
+      </div>
+    </div>
   );
+}
+
+/** חשיפה בגלילה מבוססת GSAP — מחליפה את IntersectionObserver בסקשנים 4–9 */
+function useGsapReveal(scope: React.RefObject<HTMLElement>, enabled = true) {
+  useLayoutEffect(() => {
+    if (!enabled || !scope.current) return;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const ctx = gsap.context(() => {
+      if (reduce) {
+        gsap.set("[data-rv]", { opacity: 1, y: 0 });
+        return;
+      }
+      gsap.utils.toArray<HTMLElement>("[data-rv]").forEach((el) => {
+        gsap.fromTo(
+          el,
+          { opacity: 0, y: 34 },
+          {
+            opacity: 1,
+            y: 0,
+            duration: 1,
+            ease: "power3.out",
+            delay: Number(el.dataset.rv || 0) / 1000,
+            scrollTrigger: { trigger: el, start: "top 88%", once: true },
+          }
+        );
+      });
+    }, scope);
+    return () => ctx.revert();
+  }, [scope, enabled]);
 }
 
 /* ========================== סמל המותג ========================== */
@@ -371,15 +460,16 @@ function Stage({
         className="h-full w-full object-cover"
       />
 
-      {/* סקרים כיווני — קריאוּת לטקסט בצד ימין ובתחתית */}
+      {/* סקרים כיווני — מוקטן במכוון (‎~30% פחות אטימות מהמקור) כדי שהווידאו
+          יישאר גלוי; הקריאוּת מוחזרת ע"י text-shadow על הטקסט עצמו. */}
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 transition-opacity duration-700 max-md:hidden"
         style={{
           background:
-            "linear-gradient(to left,hsl(var(--stage)/0.94) 0%,hsl(var(--stage)/0.8) 22%,hsl(var(--stage)/0.42) 46%,hsl(var(--stage)/0.06) 68%,transparent 82%)," +
-            "linear-gradient(to top,hsl(var(--stage)/0.88) 0%,hsl(var(--stage)/0.35) 26%,transparent 55%)," +
-            "linear-gradient(to bottom,hsl(var(--stage)/0.72) 0%,transparent 22%)",
+            "linear-gradient(to left,hsl(var(--stage)/0.72) 0%,hsl(var(--stage)/0.5) 20%,hsl(var(--stage)/0.2) 42%,transparent 62%)," +
+            "linear-gradient(to top,hsl(var(--stage)/0.66) 0%,hsl(var(--stage)/0.2) 24%,transparent 48%)," +
+            "linear-gradient(to bottom,hsl(var(--stage)/0.5) 0%,transparent 18%)",
         }}
       />
       <div
@@ -387,8 +477,8 @@ function Stage({
         className="pointer-events-none absolute inset-0 md:hidden"
         style={{
           background:
-            "linear-gradient(to top,hsl(var(--stage)/0.95) 0%,hsl(var(--stage)/0.7) 32%,hsl(var(--stage)/0.25) 58%,transparent 78%)," +
-            "linear-gradient(to bottom,hsl(var(--stage)/0.7) 0%,transparent 24%)",
+            "linear-gradient(to top,hsl(var(--stage)/0.82) 0%,hsl(var(--stage)/0.46) 30%,transparent 62%)," +
+            "linear-gradient(to bottom,hsl(var(--stage)/0.5) 0%,transparent 20%)",
         }}
       />
 
@@ -405,7 +495,7 @@ function Stage({
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0"
-        style={{ background: "radial-gradient(125% 95% at 50% 45%,transparent 30%,hsl(0 0% 0%/0.5) 75%,hsl(0 0% 0%/0.88) 100%)" }}
+        style={{ background: "radial-gradient(125% 95% at 50% 45%,transparent 38%,hsl(0 0% 0%/0.38) 78%,hsl(0 0% 0%/0.72) 100%)" }}
       />
       {/* מעמעם לפי גלילה */}
       <div aria-hidden className="pointer-events-none absolute inset-0 bg-stage transition-opacity duration-500" style={{ opacity: dim }} />
@@ -728,66 +818,18 @@ function ProjectCard({ p, i, compact }: { p: (typeof PROJECTS)[number]; i: numbe
       {!compact && (
         <div className="px-1 pt-7 [&_*]:[text-shadow:0_2px_22px_hsl(var(--stage)/0.92),0_1px_4px_hsl(var(--stage)/0.7)]">
           <h3 className="font-display text-[22px] font-bold tracking-[-0.01em]">{p.title}</h3>
+          {/* קו זהב שנפתח בריחוף — המוטיב מתחת לכותרות בקאברים של הרפרנס */}
+          <span
+            aria-hidden
+            className="mt-3 block h-px w-12 origin-right bg-gradient-to-l from-gold to-transparent transition-all duration-700 ease-cinematic group-hover:w-24"
+          />
           <p className="mt-3.5 text-[15.5px] leading-[1.85] text-ink-2">{p.body}</p>
-          <span className="mt-5 inline-flex rounded-full border border-gold/20 px-4 py-2 text-[11px] tracking-[0.2em] text-gold">{p.tag}</span>
+          <span className="mt-5 inline-flex rounded-full border border-gold/25 bg-gold/[0.06] px-4 py-2 text-[11px] tracking-[0.2em] text-gold">
+            {p.tag}
+          </span>
         </div>
       )}
     </article>
-  );
-}
-
-/* ========================== כרטיס עם ספוטלייט ========================== */
-
-function SpotlightCard({
-  children,
-  accent = "gold",
-  className,
-}: {
-  children: React.ReactNode;
-  accent?: "gold" | "dim";
-  className?: string;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const fine = useFinePointer();
-  const v = accent === "dim" ? "var(--dim)" : "var(--gold)";
-
-  const onMove = (e: React.PointerEvent) => {
-    if (!fine || !ref.current) return;
-    const r = ref.current.getBoundingClientRect();
-    ref.current.style.setProperty("--mx", `${((e.clientX - r.left) / r.width) * 100}%`);
-    ref.current.style.setProperty("--my", `${((e.clientY - r.top) / r.height) * 100}%`);
-  };
-  const onLeave = () => {
-    ref.current?.style.removeProperty("--mx");
-    ref.current?.style.removeProperty("--my");
-  };
-
-  return (
-    <div
-      ref={ref}
-      onPointerMove={onMove}
-      onPointerLeave={onLeave}
-      className={cn(
-        "group/card relative bg-[hsl(222_27%_4%/0.66)] backdrop-blur-lg transition-[background,transform] duration-500 ease-cinematic",
-        "hover:-translate-y-1 [--mx:50%] [--my:50%]",
-        className
-      )}
-      style={{ ["--accent" as string]: v }}
-    >
-      {/* קו מבטא אנכי */}
-      <span
-        aria-hidden
-        className="pointer-events-none absolute inset-y-0 start-0 z-[1] w-px origin-top scale-y-0 transition-transform duration-700 ease-cinematic group-hover/card:scale-y-100"
-        style={{ background: `linear-gradient(hsl(${v}),transparent)` }}
-      />
-      {/* ספוטלייט */}
-      <span
-        aria-hidden
-        className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-400 group-hover/card:opacity-100"
-        style={{ background: `radial-gradient(260px circle at var(--mx) var(--my),hsl(${v}/0.16),transparent 72%)` }}
-      />
-      <div className="relative z-[1]">{children}</div>
-    </div>
   );
 }
 
@@ -970,32 +1012,34 @@ export default function StudioAviSite() {
             key={act}
             className="absolute inset-0 grid content-end justify-items-start px-[var(--gut)] pb-[clamp(124px,16vh,172px)] max-md:pb-[clamp(152px,20vh,196px)]"
           >
-            <div className="pointer-events-auto max-w-[min(720px,68vw)] max-lg:max-w-full">
+            {/* צומצם במכוון: רוחב 560px במקום 720 וטיפוגרפיה קטנה יותר,
+                כדי שהווידאו יישאר החלק הדומיננטי במסך */}
+            <div className="pointer-events-auto max-w-[min(560px,58vw)] max-lg:max-w-full">
               {activeAct.eyebrow && (
-                <p className="mb-5 flex items-center gap-3.5 text-[12.5px] tracking-[0.32em] text-gold-hi">
+                <p className="mb-4 flex items-center gap-3.5 text-[11.5px] tracking-[0.32em] text-gold-hi [text-shadow:0_2px_12px_hsl(0_0%_0%/0.9)]">
                   {activeAct.eyebrow}
-                  <span className="h-px max-w-[70px] flex-1 bg-gold/20" />
+                  <span className="h-px max-w-[56px] flex-1 bg-gold/25" />
                 </p>
               )}
               <h1
                 className={cn(
-                  "animate-rise-in font-display font-bold leading-[1.02] tracking-[-0.015em] [text-wrap:balance] motion-reduce:animate-none",
-                  act === 1 ? "text-[clamp(40px,6.8vw,92px)]" : "text-[clamp(34px,5vw,70px)]"
+                  "animate-rise-in font-display font-bold leading-[1.04] tracking-[-0.015em] [text-wrap:balance] motion-reduce:animate-none",
+                  act === 1 ? "text-[clamp(32px,4.9vw,64px)]" : "text-[clamp(28px,3.9vw,52px)]"
                 )}
                 style={{ animationDelay: "0.25s", opacity: calm ? 1 : undefined }}
               >
                 <span className="block overflow-hidden py-[0.14em] -my-[0.14em]">
-                  <span className="block [text-shadow:0_6px_44px_hsl(0_0%_0%/0.9),0_2px_10px_hsl(0_0%_0%/0.6)]">{activeAct.lines[0]}</span>
+                  <span className="block [text-shadow:0_4px_28px_hsl(0_0%_0%/0.95),0_2px_8px_hsl(0_0%_0%/0.85)]">{activeAct.lines[0]}</span>
                 </span>
                 <span className="block overflow-hidden py-[0.14em] -my-[0.14em]">
-                  <span className="block bg-[linear-gradient(96deg,hsl(var(--gold-dp))_4%,hsl(var(--gold-hi))_42%,hsl(var(--gold))_78%)] bg-clip-text text-transparent [filter:drop-shadow(0_4px_30px_hsl(var(--gold)/0.35))]">
+                  <span className="block bg-[linear-gradient(96deg,hsl(var(--gold-dp))_4%,hsl(var(--gold-hi))_42%,hsl(var(--gold))_78%)] bg-clip-text text-transparent [filter:drop-shadow(0_3px_16px_hsl(0_0%_0%/0.85))_drop-shadow(0_2px_24px_hsl(var(--gold)/0.3))]">
                     {activeAct.lines[1]}
                   </span>
                 </span>
               </h1>
 
               <p
-                className="mt-7 max-w-[50ch] animate-rise-in text-[clamp(15.5px,1.35vw,18.5px)] leading-[1.9] text-ink-2 [text-shadow:0_2px_18px_hsl(0_0%_0%/0.9)] motion-reduce:animate-none max-md:mt-[22px]"
+                className="mt-5 max-w-[42ch] animate-rise-in text-[clamp(14px,1.1vw,16px)] leading-[1.85] text-ink-2 [text-shadow:0_2px_14px_hsl(0_0%_0%/0.95),0_1px_4px_hsl(0_0%_0%/0.8)] motion-reduce:animate-none max-md:mt-4"
                 style={{ animationDelay: "0.5s" }}
               >
                 {activeAct.lede}
@@ -1038,18 +1082,7 @@ export default function StudioAviSite() {
       )}
 
       {/* ====== האתר המלא (4–9) ====== */}
-      {phase === "open" && (
-        <main className="relative z-10">
-          <Projects />
-          <About />
-          <Services />
-          <Stats />
-          <Process />
-          <Faq />
-          <Contact />
-          <SiteFooter onRestart={() => jumpTo(1)} />
-        </main>
-      )}
+      {phase === "open" && <Story onRestart={() => jumpTo(1)} />}
     </div>
   );
 }
@@ -1065,8 +1098,26 @@ const SECTION_IDS: Record<number, string> = {
 
 /* ========================== סקשנים ========================== */
 
+/** עוטף את עמודי 4–9 ומריץ עליהם חשיפה אחת מרוכזת ב-GSAP */
+function Story({ onRestart }: { onRestart: () => void }) {
+  const scope = useRef<HTMLElement>(null);
+  useGsapReveal(scope);
+  return (
+    <main ref={scope} className="relative z-10">
+      <Projects />
+      <About />
+      <Services />
+      <Stats />
+      <Process />
+      <Faq />
+      <Contact />
+      <SiteFooter onRestart={onRestart} />
+    </main>
+  );
+}
+
 const secCls =
-  "relative isolate mx-auto max-w-[1280px] px-[var(--gut)] py-[clamp(100px,15vh,180px)]";
+  "relative isolate mx-auto max-w-[1280px] px-[var(--gut)] py-[clamp(88px,13vh,164px)]";
 
 /** סקרים מקומי — מבטיח קריאוּת מעל כל פריים וידאו, בהיר ככל שיהיה */
 function SecScrim({ wide }: { wide?: boolean }) {
@@ -1084,21 +1135,45 @@ function SecScrim({ wide }: { wide?: boolean }) {
 
 const shadowText = "[&_*]:[text-shadow:0_2px_22px_hsl(var(--stage)/0.92),0_1px_4px_hsl(var(--stage)/0.7)]";
 
-function SecHead({ eyebrow, title, sub, center }: { eyebrow: string; title: React.ReactNode; sub?: React.ReactNode; center?: boolean }) {
+/** כותרת סקשן — eyebrow, מפריד מעוטר, כותרת ותת-כותרת */
+function SecHead({
+  eyebrow,
+  title,
+  sub,
+  center,
+}: {
+  eyebrow: string;
+  title: React.ReactNode;
+  sub?: React.ReactNode;
+  center?: boolean;
+}) {
   return (
-    <div className={cn("mb-[clamp(56px,7vw,86px)] grid max-w-[720px] gap-[22px]", center && "mx-auto justify-items-center text-center", shadowText)}>
-      <p className="flex items-center gap-3.5 text-[12.5px] tracking-[0.32em] text-gold-hi">
-        {center && <span className="h-px w-[60px] bg-gold/20" />}
+    <div
+      className={cn(
+        "mb-[clamp(48px,6vw,78px)] grid max-w-[760px] gap-5",
+        center && "mx-auto justify-items-center text-center",
+        shadowText
+      )}
+    >
+      <p
+        data-rv="0"
+        className={cn("flex items-center gap-3.5 text-[11.5px] tracking-[0.34em] text-gold-hi", center && "justify-center")}
+      >
         {eyebrow}
-        <span className={cn("h-px bg-gold/20", center ? "w-[60px]" : "max-w-[70px] flex-1")} />
       </p>
-      <Reveal as="h2" className="font-display text-[clamp(32px,4.8vw,64px)] font-bold leading-[1.08] tracking-[-0.02em] [text-wrap:balance]">
+      <h2
+        data-rv="60"
+        className="font-display text-[clamp(30px,4.4vw,58px)] font-bold leading-[1.1] tracking-[-0.02em] [text-wrap:balance]"
+      >
         {title}
-      </Reveal>
+      </h2>
+      <span data-rv="120" className={cn("mt-1 block", center ? "" : "self-start")}>
+        <Ornament />
+      </span>
       {sub && (
-        <Reveal as="p" className="max-w-[56ch] text-[16.5px] leading-[1.95] text-ink-2">
+        <p data-rv="180" className="mt-1 max-w-[58ch] text-[16px] leading-[1.95] text-ink-2">
           {sub}
-        </Reveal>
+        </p>
       )}
     </div>
   );
@@ -1114,11 +1189,11 @@ function Projects() {
         title="פרויקטים אחרונים"
         sub="שלושה מותגים שנכנסו פנימה ויצאו אחרת לגמרי. כל פרויקט נבנה בהתאמה אישית מלאה — מהרעיון הראשון ועד השורה האחרונה של הקוד, כדי להזיז מדדים, לא רק להיראות טוב."
       />
-      <div className="grid grid-cols-3 items-start gap-[clamp(20px,3vw,44px)] max-md:grid-cols-1 max-md:gap-16">
+      <div className="grid grid-cols-3 items-start gap-[clamp(20px,3vw,44px)] max-md:grid-cols-1 max-md:gap-14">
         {PROJECTS.map((p, i) => (
-          <Reveal key={p.no} delay={i * 180}>
+          <div key={p.no} data-rv={i * 140}>
             <ProjectCard p={p} i={i} compact={false} />
-          </Reveal>
+          </div>
         ))}
       </div>
     </section>
@@ -1135,41 +1210,46 @@ function About() {
             אודות
             <span className="h-px max-w-[70px] flex-1 bg-gold/20" />
           </p>
-          <Reveal as="h2" className="mt-1.5 font-display text-[clamp(32px,4.8vw,64px)] font-bold leading-[1.08] tracking-[-0.02em]">
+          <h2 data-rv="60" className="mt-1.5 font-display text-[clamp(30px,4.4vw,58px)] font-bold leading-[1.1] tracking-[-0.02em]">
             סטודיו של איש אחד.
             <br />
             <span className="bg-[linear-gradient(96deg,hsl(var(--gold-dp))_4%,hsl(var(--gold-hi))_42%,hsl(var(--gold))_78%)] bg-clip-text text-transparent">
               וזו בדיוק הנקודה.
             </span>
-          </Reveal>
-          <Reveal as="p" className="mt-6 max-w-[48ch] text-[16.5px] leading-[1.95] text-ink-2">
+          </h2>
+          <span data-rv="110" className="mt-5 block">
+            <Ornament w="w-12" />
+          </span>
+          <p data-rv="160" className="mt-6 max-w-[48ch] text-[16px] leading-[1.95] text-ink-2">
             קוראים לי אבי, ואני מעצב ובונה אתרים כבר יותר מעשור — כולל עולמות תלת מימד ואנימציית תנועה. אין כאן מנהל
             פרויקטים שמעביר הודעות הלאה, ואין צוות שמתחלף באמצע. מי שמדבר איתכם בשיחה הראשונה הוא גם מי שכותב את
             השורה האחרונה של הקוד.
-          </Reveal>
-          <Reveal as="p" className="mt-6 max-w-[48ch] text-[16.5px] leading-[1.95] text-ink-2" delay={80}>
+          </p>
+          <p data-rv="220" className="mt-6 max-w-[48ch] text-[16px] leading-[1.95] text-ink-2">
             אני לוקח מספר מצומצם של פרויקטים בכל רבעון, כי אתר שנראה אחרת מכולם לא נולד מתבנית — הוא נולד מזמן.{" "}
             <strong className="font-bold text-foreground">עיצוב, קוד, תלת מימד וביצועים</strong> יושבים אצלי באותו ראש, וזה מה שמאפשר
             לדברים להתחבר.
-          </Reveal>
-          <Reveal as="ul" className="mt-9 grid gap-[18px]" delay={160}>
+          </p>
+          <ul data-rv="280" className="mt-9 grid gap-[18px]">
             {["עשור בעיצוב, פיתוח ותלת מימד לאתרים", "אדם אחד מקצה לקצה — בלי תיווך", "קוד שנכתב ידנית, בלי בילדרים"].map((t) => (
               <li key={t} className="flex items-center gap-[15px] text-[15.5px] text-ink-2">
-                <i className="h-1.5 w-1.5 shrink-0 rounded-full bg-gold shadow-[0_0_18px_hsl(var(--gold))]" />
+                <i className="h-1.5 w-1.5 shrink-0 rotate-45 bg-gold shadow-[0_0_14px_hsl(var(--gold))]" />
                 {t}
               </li>
             ))}
-          </Reveal>
+          </ul>
         </div>
 
-        <Reveal as="ul" className="grid gap-px overflow-hidden rounded-[18px] border border-foreground/10 bg-foreground/10">
-          {SKILLS.map((s) => (
-            <SpotlightCard key={s.b} accent={s.accent ?? "gold"} className="grid gap-2.5 p-[clamp(22px,2.4vw,30px)]">
-              <b className={cn("font-display text-lg font-bold", s.accent === "dim" ? "text-dim" : "text-gold")}>{s.b}</b>
-              <span className="text-[14.5px] leading-[1.8] text-ink-2">{s.s}</span>
-            </SpotlightCard>
+        <ul className="grid gap-3">
+          {SKILLS.map((s, i) => (
+            <li key={s.b} data-rv={i * 90}>
+              <GlowCard accent={s.accent ?? "gold"} bloom={false} innerClassName="grid gap-2 p-[clamp(20px,2.2vw,26px)]">
+                <b className={cn("font-display text-[17px] font-bold", s.accent === "dim" ? "text-dim" : "text-gold")}>{s.b}</b>
+                <span className="text-[14.5px] leading-[1.8] text-ink-2">{s.s}</span>
+              </GlowCard>
+            </li>
           ))}
-        </Reveal>
+        </ul>
       </div>
     </section>
   );
@@ -1189,20 +1269,43 @@ function Services() {
           </>
         }
       />
-      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-[18px] border border-foreground/10 bg-foreground/10 max-md:grid-cols-1">
-        {SERVICES.map((s, i) => (
-          <SpotlightCard
-            key={s.num}
-            accent={s.accent ?? "gold"}
-            className={cn("p-[clamp(30px,3.2vw,46px)]", i === SERVICES.length - 1 && SERVICES.length % 2 === 1 && "md:col-span-2")}
-          >
-            <span className={cn("font-display text-xs tracking-[0.28em]", s.accent === "dim" ? "text-dim" : "text-gold")} dir="ltr">
-              {s.num}
-            </span>
-            <h3 className="mt-[22px] font-display text-[26px] font-bold tracking-[-0.01em]">{s.h}</h3>
-            <p className="mt-4 max-w-[44ch] text-[15.5px] leading-[1.9] text-ink-2">{s.p}</p>
-          </SpotlightCard>
-        ))}
+      <div className="grid grid-cols-3 gap-4 max-lg:grid-cols-2 max-md:grid-cols-1">
+        {SERVICES.map((s, i) => {
+          const Icon = SERVICE_ICONS[i];
+          return (
+            <div
+              key={s.num}
+              data-rv={i * 110}
+              className={cn(i === 3 && "lg:col-span-2 max-lg:col-span-1")}
+            >
+              <GlowCard
+                accent={s.accent ?? "gold"}
+                className="h-full"
+                innerClassName="flex h-full flex-col p-[clamp(26px,2.8vw,38px)]"
+              >
+                {/* אייקון בתוך ריבוע מעוגל עם זוהר — כמו כרטיסי השירות ברפרנס */}
+                <span
+                  className={cn(
+                    "mb-6 inline-flex h-12 w-12 items-center justify-center rounded-xl border transition-[transform,box-shadow] duration-500 ease-cinematic group-hover/card:-translate-y-0.5",
+                    s.accent === "dim"
+                      ? "border-dim/30 bg-dim/[0.07] text-dim group-hover/card:shadow-[0_0_26px_hsl(var(--dim)/0.35)]"
+                      : "border-gold/30 bg-gold/[0.07] text-gold group-hover/card:shadow-[0_0_26px_hsl(var(--gold)/0.35)]"
+                  )}
+                >
+                  <Icon className="h-5 w-5" strokeWidth={1.5} aria-hidden />
+                </span>
+                <span
+                  dir="ltr"
+                  className={cn("font-display text-[11px] tracking-[0.3em]", s.accent === "dim" ? "text-dim/70" : "text-gold/70")}
+                >
+                  {s.num}
+                </span>
+                <h3 className="mt-2.5 font-display text-[22px] font-bold leading-tight tracking-[-0.01em]">{s.h}</h3>
+                <p className="mt-3.5 text-[15px] leading-[1.85] text-ink-2">{s.p}</p>
+              </GlowCard>
+            </div>
+          );
+        })}
       </div>
     </section>
   );
@@ -1210,27 +1313,72 @@ function Services() {
 
 function Stats() {
   return (
-    <section className={cn(secCls, "py-[clamp(60px,8vh,100px)]")}>
+    <section className={cn(secCls, "!py-[clamp(52px,7vh,88px)]")}>
       <SecScrim wide />
-      <div className="grid grid-cols-3 gap-px border-y border-foreground/10 bg-foreground/10">
-        {STATS.map((s, i) => (
-          <Reveal key={s.b} delay={i * 100} className="bg-[hsl(225_29%_3%/0.55)] px-5 py-[clamp(34px,4vw,52px)] text-center backdrop-blur">
-            <b className="block bg-[linear-gradient(180deg,hsl(var(--gold-hi)),hsl(var(--gold-dp)))] bg-clip-text font-display text-[clamp(38px,5vw,64px)] font-bold leading-none text-transparent">
-              {s.b}
-            </b>
-            <span className="mt-3.5 block text-[11.5px] tracking-[0.22em] text-ink-3">{s.s}</span>
-          </Reveal>
-        ))}
+      {/* פס אחד מעוטר במקום שלוש תיבות — קרוב יותר לרפרנס וקל יותר לעין */}
+      <div className="relative rounded-2xl border border-gold/15 bg-[hsl(224_28%_5%/0.6)] px-4 py-[clamp(28px,3.4vw,44px)] backdrop-blur-xl">
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-x-[22%] -top-px h-px bg-gradient-to-l from-transparent via-gold/50 to-transparent"
+        />
+        <div className="grid grid-cols-3 max-md:grid-cols-1 max-md:gap-8">
+          {STATS.map((s, i) => {
+            const Icon = STAT_ICONS[i];
+            return (
+              <div
+                key={s.b}
+                data-rv={i * 110}
+                className={cn(
+                  "flex flex-col items-center gap-3 px-4 text-center",
+                  i > 0 && "border-s border-gold/12 max-md:border-s-0 max-md:border-t max-md:pt-8"
+                )}
+              >
+                <Icon className="h-6 w-6 text-gold/80" strokeWidth={1.4} aria-hidden />
+                <b className="block bg-[linear-gradient(180deg,hsl(var(--gold-hi)),hsl(var(--gold-dp)))] bg-clip-text font-display text-[clamp(34px,4.4vw,56px)] font-bold leading-none text-transparent">
+                  {s.b}
+                </b>
+                <span className="text-[11.5px] tracking-[0.22em] text-ink-3">{s.s}</span>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </section>
   );
 }
 
 function Process() {
+  const trackRef = useRef<HTMLDivElement>(null);
+  const lineRef = useRef<HTMLSpanElement>(null);
+
+  /* קו הזמן נמשך עם הגלילה (scrub) — התנועה שמחברת בין השלבים */
+  useLayoutEffect(() => {
+    const track = trackRef.current;
+    const line = lineRef.current;
+    if (!track || !line) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      gsap.set(line, { scaleX: 1 });
+      return;
+    }
+    const ctx = gsap.context(() => {
+      gsap.fromTo(
+        line,
+        { scaleX: 0 },
+        {
+          scaleX: 1,
+          ease: "none",
+          scrollTrigger: { trigger: track, start: "top 80%", end: "bottom 65%", scrub: 0.6 },
+        }
+      );
+    }, track);
+    return () => ctx.revert();
+  }, []);
+
   return (
     <section id="process" className={secCls}>
       <SecScrim />
       <SecHead
+        center
         eyebrow="איך זה עובד"
         title={
           <>
@@ -1240,18 +1388,55 @@ function Process() {
           </>
         }
       />
-      <ol className="relative grid grid-cols-4 gap-[clamp(18px,2.4vw,34px)] pt-[34px] before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-foreground/10 max-md:grid-cols-1 max-md:gap-9">
-        {STEPS.map((s, i) => (
-          <Reveal key={s.n} delay={i * 100} as="li" className="group/step relative transition-transform duration-500 ease-cinematic hover:-translate-y-1">
-            <span className="absolute -top-[37px] end-0 h-[7px] w-[7px] rounded-full bg-gold shadow-[0_0_18px_hsl(var(--gold))] transition-[box-shadow,transform] duration-400 ease-cinematic group-hover/step:scale-[1.35] group-hover/step:shadow-[0_0_30px_hsl(var(--gold))] max-md:hidden" />
-            <span className="font-display text-xs tracking-[0.28em] text-gold transition-colors group-hover/step:text-gold-hi" dir="ltr">
-              {s.n}
-            </span>
-            <h3 className="mt-[18px] font-display text-[21px] font-bold">{s.h}</h3>
-            <p className="mt-3.5 text-[15.5px] leading-[1.9] text-ink-2">{s.p}</p>
-          </Reveal>
-        ))}
-      </ol>
+
+      <div ref={trackRef} className="relative">
+        {/* מסילת קו הזמן — נסתרת במובייל שבו הכרטיסים נערמים */}
+        <div aria-hidden className="absolute inset-x-0 top-[42px] h-px bg-foreground/10 max-md:hidden">
+          <span
+            ref={lineRef}
+            className="block h-full origin-right bg-gradient-to-l from-gold via-gold-hi to-gold/30"
+            style={{ boxShadow: "0 0 14px hsl(var(--gold)/0.7)" }}
+          />
+        </div>
+
+        <ol className="grid grid-cols-4 gap-[clamp(14px,1.8vw,26px)] max-lg:grid-cols-2 max-md:grid-cols-1 max-md:gap-5">
+          {STEPS.map((s, i) => {
+            const Icon = STEP_ICONS[i];
+            return (
+              <li key={s.n} data-rv={i * 120} className="relative">
+                {/* צומת על קו הזמן */}
+                <span
+                  aria-hidden
+                  className="absolute end-[calc(50%-5px)] top-[37px] z-[2] h-2.5 w-2.5 rotate-45 bg-gold shadow-[0_0_16px_hsl(var(--gold))] max-md:hidden"
+                />
+                {/* ריחוף עדין ומתמשך, כל כרטיס בפאזה אחרת */}
+                <div
+                  className="animate-float-soft motion-reduce:animate-none"
+                  style={{ animationDelay: `${i * -1.9}s` }}
+                >
+                  <GlowCard className="mt-[76px] max-md:mt-0" innerClassName="p-[clamp(22px,2.4vw,30px)]">
+                    <div className="flex items-center justify-between">
+                      <span
+                        className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-gold/30 bg-gold/[0.07] text-gold transition-[box-shadow,transform] duration-500 ease-cinematic group-hover/card:-translate-y-0.5 group-hover/card:shadow-[0_0_26px_hsl(var(--gold)/0.4)]"
+                      >
+                        <Icon className="h-[18px] w-[18px]" strokeWidth={1.5} aria-hidden />
+                      </span>
+                      <span
+                        dir="ltr"
+                        className="bg-[linear-gradient(180deg,hsl(var(--gold-hi)),hsl(var(--gold-dp)))] bg-clip-text font-display text-[30px] font-bold leading-none text-transparent opacity-45 transition-opacity duration-500 group-hover/card:opacity-90"
+                      >
+                        {s.n}
+                      </span>
+                    </div>
+                    <h3 className="mt-5 font-display text-[19px] font-bold">{s.h}</h3>
+                    <p className="mt-2.5 text-[14.5px] leading-[1.85] text-ink-2">{s.p}</p>
+                  </GlowCard>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      </div>
     </section>
   );
 }
@@ -1270,29 +1455,30 @@ function Faq() {
           </>
         }
       />
-      <div className="grid max-w-[920px] gap-px overflow-hidden rounded-[18px] border border-foreground/10 bg-foreground/10">
+      <div className="mx-auto grid max-w-[920px] gap-3">
         {FAQ.map((f, i) => (
-          <Reveal key={f.q} delay={i * 100}>
-            <details className="group/faq bg-[hsl(222_27%_4%/0.7)] backdrop-blur-lg transition-colors duration-500 open:bg-gold/5 hover:bg-gold/[0.045]">
-              <summary
-                className={cn(
-                  "flex cursor-pointer list-none items-center gap-[18px] px-[clamp(20px,2.4vw,30px)] py-[clamp(20px,2.2vw,26px)]",
-                  "font-display text-[clamp(17px,1.7vw,21px)] font-bold tracking-[-0.01em] transition-[color,padding] duration-400 ease-cinematic",
-                  "hover:ps-2 hover:text-gold [&::-webkit-details-marker]:hidden",
-                  shadowText
-                )}
-              >
-                {f.q}
-                <Plus
-                  aria-hidden
-                  className="ms-auto h-3.5 w-3.5 shrink-0 text-gold transition-[transform,filter] duration-400 ease-cinematic group-open/faq:rotate-45 group-hover/faq:[filter:drop-shadow(0_0_6px_hsl(var(--gold)/0.65))]"
-                />
-              </summary>
-              <div className="px-[clamp(20px,2.4vw,30px)] pb-[clamp(22px,2.4vw,28px)]">
-                <p className="max-w-[64ch] text-[15.5px] leading-[1.9] text-ink-2">{f.a}</p>
-              </div>
-            </details>
-          </Reveal>
+          <div key={f.q} data-rv={i * 90}>
+            <GlowCard bloom={false} className="hover:-translate-y-0.5" innerClassName="">
+              <details className="group/faq transition-colors duration-500 open:bg-gold/[0.04]">
+                <summary
+                  className={cn(
+                    "flex cursor-pointer list-none items-center gap-[18px] px-[clamp(20px,2.4vw,28px)] py-[clamp(18px,2vw,24px)]",
+                    "font-display text-[clamp(16px,1.55vw,19px)] font-bold tracking-[-0.01em] transition-[color,padding] duration-300 ease-cinematic",
+                    "hover:ps-2 hover:text-gold [&::-webkit-details-marker]:hidden",
+                    shadowText
+                  )}
+                >
+                  {f.q}
+                  <span className="ms-auto inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-gold/25 bg-gold/[0.06] text-gold transition-[transform,box-shadow] duration-400 ease-cinematic group-open/faq:rotate-45 group-open/faq:shadow-[0_0_18px_hsl(var(--gold)/0.4)]">
+                    <Plus aria-hidden className="h-3.5 w-3.5" />
+                  </span>
+                </summary>
+                <div className="px-[clamp(20px,2.4vw,28px)] pb-[clamp(20px,2.2vw,26px)]">
+                  <p className="max-w-[64ch] text-[15px] leading-[1.9] text-ink-2">{f.a}</p>
+                </div>
+              </details>
+            </GlowCard>
+          </div>
         ))}
       </div>
     </section>
@@ -1335,44 +1521,57 @@ function Contact() {
             הצעד האחרון
             <span className="h-px max-w-[70px] flex-1 bg-gold/20" />
           </p>
-          <Reveal as="h2" className="mt-1.5 font-display text-[clamp(32px,4.8vw,64px)] font-bold leading-[1.08] tracking-[-0.02em]">
+          <h2 data-rv="60" className="mt-1.5 font-display text-[clamp(30px,4.4vw,58px)] font-bold leading-[1.1] tracking-[-0.02em]">
             אפשר להמשיך לגלול.
             <br />
             <span className="bg-[linear-gradient(96deg,hsl(var(--gold-dp))_4%,hsl(var(--gold-hi))_42%,hsl(var(--gold))_78%)] bg-clip-text text-transparent">
               או פשוט לקפוץ.
             </span>
-          </Reveal>
-          <Reveal as="p" className="mt-6 max-w-[44ch] text-[16.5px] leading-[1.95] text-ink-2">
+          </h2>
+          <span data-rv="110" className="mt-5 block">
+            <Ornament w="w-12" />
+          </span>
+          <p data-rv="160" className="mt-6 max-w-[44ch] text-[16px] leading-[1.95] text-ink-2">
             כל פרויקט מתחיל בשיחה אחת קצרה — בלי התחייבות ובלי מצגות מכירה. נשמע אתכם, נגיד אם זה מתאים, ותצאו עם
             כיוון ברור גם אם לא נעבוד יחד.
-          </Reveal>
-          <Reveal as="ul" className="mt-9 grid gap-[18px]" delay={100}>
+          </p>
+          <ul data-rv="220" className="mt-9 grid gap-[18px]">
             {["חזרה תוך 24 שעות, מבן אדם אמיתי", "הצעת מחיר מפורטת ללא עלות", "מספר פרויקטים מוגבל בכל רבעון"].map((t) => (
               <li key={t} className="flex items-center gap-[15px] text-[15.5px] text-ink-2">
-                <i className="h-1.5 w-1.5 shrink-0 rounded-full bg-gold shadow-[0_0_18px_hsl(var(--gold))]" />
+                <i className="h-1.5 w-1.5 shrink-0 rotate-45 bg-gold shadow-[0_0_14px_hsl(var(--gold))]" />
                 {t}
               </li>
             ))}
-          </Reveal>
-          <Reveal className="mt-11 flex flex-wrap gap-4" delay={180}>
+          </ul>
+          <div data-rv="280" className="mt-11 flex flex-wrap gap-4">
             <a href={WHATSAPP} target="_blank" rel="noopener" className="contents">
               <CineButton variant="ghost">וואטסאפ</CineButton>
             </a>
             <a href={`mailto:${CONTACT_EMAIL}`} className="contents">
               <CineButton variant="ghost">מייל ישיר</CineButton>
             </a>
-          </Reveal>
+          </div>
         </div>
 
-        <Reveal className="relative">
+        <div data-rv="120" className="relative">
           <div
             className={cn(
-              "relative rounded-3xl border border-gold/25 p-[clamp(30px,3.6vw,48px)] backdrop-blur-3xl transition-[opacity,transform] duration-600",
-              "bg-[linear-gradient(180deg,hsl(225_25%_6%/0.9),hsl(225_29%_3%/0.94))]",
-              "shadow-[0_60px_140px_-50px_hsl(0_0%_0%/1),0_0_100px_-50px_hsl(var(--dim)/0.4)]",
+              "relative rounded-3xl p-px transition-[opacity,transform] duration-500",
+              "bg-[linear-gradient(180deg,hsl(var(--gold)/0.45),hsl(var(--gold)/0.08)_40%,transparent_75%)]",
+              "shadow-[0_60px_140px_-50px_hsl(0_0%_0%/1),0_0_110px_-55px_hsl(var(--gold)/0.5)]",
               sent && "pointer-events-none scale-[0.97] opacity-0"
             )}
           >
+          <div
+            className={cn(
+              "relative overflow-hidden rounded-3xl p-[clamp(28px,3.4vw,44px)] backdrop-blur-3xl",
+              "bg-[linear-gradient(180deg,hsl(225_25%_6%/0.94),hsl(225_29%_3%/0.96))]"
+            )}
+          >
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-x-[20%] -bottom-12 h-24 rounded-[50%] bg-gold/40 opacity-40 blur-3xl"
+            />
             <h3 className="font-display text-[clamp(26px,2.8vw,34px)] font-bold tracking-[-0.02em]">השאירו פרטים</h3>
             <p className="mt-3 text-[15px] text-ink-3">ואחזור אליכם עם רעיון ראשון לפרויקט</p>
 
@@ -1461,6 +1660,7 @@ function Contact() {
               <p className="mt-[18px] text-center text-[12.5px] text-muted-ink">הפרטים נשמרים אצלי בלבד. בלי ספאם, בלי רשימות תפוצה.</p>
             </form>
           </div>
+          </div>
 
           {sent && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 rounded-3xl border border-gold/35 p-11 text-center backdrop-blur-3xl bg-[linear-gradient(180deg,hsl(225_25%_8%/0.94),hsl(225_29%_3%/0.96))]">
@@ -1473,7 +1673,7 @@ function Contact() {
               </p>
             </div>
           )}
-        </Reveal>
+        </div>
       </div>
     </section>
   );

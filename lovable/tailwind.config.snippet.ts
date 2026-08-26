@@ -34,6 +34,11 @@ export const studioAviThemeExtend = {
       "0%, 100%": { transform: "translateY(0)" },
       "50%": { transform: "translateY(-18px)" },
     },
+    // ריחוף עדין לכרטיסי התהליך — transform בלבד, מונפש ע"י ה-compositor
+    floatSoft: {
+      "0%, 100%": { transform: "translateY(0)" },
+      "50%": { transform: "translateY(-7px)" },
+    },
     grain: {
       "0%": { transform: "translate(0, 0)" },
       "33%": { transform: "translate(-3%, 2%)" },
@@ -55,6 +60,7 @@ export const studioAviThemeExtend = {
   },
   animation: {
     float: "float 8s ease-in-out infinite",
+    "float-soft": "floatSoft 7.5s ease-in-out infinite",
     grain: "grain 1.1s steps(3) infinite",
     "pulse-dot": "pulseDot 3.4s ease-in-out infinite",
     "rise-in": "riseIn 1.2s cubic-bezier(0.16,1,0.3,1) forwards",
