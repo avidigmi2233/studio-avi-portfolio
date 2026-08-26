@@ -1,3 +1,6 @@
 .DS_Store
 *.mp4
 _source/
+
+# נכסי הווידאו של גרסת Lovable כן נשמרים — הם דרושים לבנייה
+!lovable/public/video/*.mp4
