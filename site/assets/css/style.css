@@ -32,6 +32,7 @@
   --gold:#E8C48A;
   --gold-hi:#FFEBC8;
   --gold-dp:#B9884A;
+  --gold-rgb:232,196,138;
 
   /* תלת מימד — הצבע המשני: חתימת הבידול הדיגיטלי/תלת־ממדי */
   --dim:#7FD8FF;
@@ -148,7 +149,7 @@ body.scrolled .rail--top::before{opacity:1}
 .bm-s,.bm-a{transition:opacity .45s ease}
 .brand:hover .brand-mark{color:var(--gold-hi)}
 @keyframes pulse{0%,100%{opacity:.45;transform:scale(.72)}50%{opacity:1;transform:scale(1.08)}}
-.brand-name{font-family:var(--display);font-size:12.5px;font-weight:700;letter-spacing:.3em;direction:ltr}
+.brand-name{font-family:var(--display);font-size:12.5px;font-weight:700;letter-spacing:.12em;direction:rtl}
 .brand-dot{color:var(--gold)}
 
 /* כפתור התפריט */
@@ -406,12 +407,18 @@ body.gate .proj-card{animation-duration:9s}
 .proj{--i:0;position:relative}
 .proj:nth-child(2){margin-top:clamp(0px,4vw,52px)}
 .proj:nth-child(3){margin-top:clamp(0px,8vw,104px)}
-.proj-card{display:block;position:relative;border-radius:16px;overflow:hidden;
+.proj-card{--mx:50%;--my:42%;display:block;position:relative;border-radius:16px;overflow:hidden;
   border:1px solid rgba(232,196,138,.2);text-decoration:none;color:inherit;
   box-shadow:0 50px 110px -40px rgba(0,0,0,.95),0 0 90px -30px rgba(var(--dim-rgb),.3);
   animation:float 8s ease-in-out infinite;animation-delay:calc(var(--i) * -2.6s);
   transition:transform .8s var(--ease),box-shadow .8s var(--ease),border-color .6s}
 @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-18px)}}
+/* הטיה עוקבת-סמן: JS מזין transform ישירות בזמן ריחוף, כאן רק מאיצים את המעבר ומקפיאים את ריחוף-האידל כדי שלא יתאבקו */
+.proj-card.tilting{animation-play-state:paused;transition:transform .12s ease-out,box-shadow .8s var(--ease),border-color .6s}
+.proj-card::before{content:"";position:absolute;inset:0;z-index:1;pointer-events:none;
+  background:radial-gradient(280px circle at var(--mx) var(--my),rgba(var(--gold-rgb),.32),transparent 72%);
+  opacity:0;transition:opacity .4s ease}
+.proj:hover .proj-card::before{opacity:1}
 .proj-card img{width:100%;aspect-ratio:16/10;object-fit:cover;object-position:center;
   transition:transform 1.2s var(--ease)}
 .proj-card::after{content:"";position:absolute;inset:0;pointer-events:none;
@@ -446,17 +453,23 @@ body.gate .proj-card{animation-duration:9s}
 .grid-4{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:var(--rule-2);
   border:1px solid var(--rule-2);border-radius:18px;overflow:hidden}
 .grid-4 .card:last-child:nth-child(odd){grid-column:1 / -1}
-.card{--accent:var(--gold);--accent-rgb:232,196,138;position:relative;padding:clamp(30px,3.2vw,46px);
+.card{--accent:var(--gold);--accent-rgb:232,196,138;--mx:50%;--my:50%;
+  position:relative;padding:clamp(30px,3.2vw,46px);
   background:rgba(7,9,14,.66);
   backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
-  transition:background .6s ease,transform .6s var(--ease)}
+  transition:background .6s ease,transform .5s var(--ease)}
 /* כרטיס התלת מימד מסומן בצבע המשני — חתימת הבידול, לא רק כותרת */
 .grid-4 .card:nth-child(2){--accent:var(--dim);--accent-rgb:var(--dim-rgb)}
-.card::before{content:"";position:absolute;inset-block:0;inset-inline-start:0;width:1px;
+.card::before{content:"";position:absolute;inset-block:0;inset-inline-start:0;width:1px;z-index:1;
   background:linear-gradient(var(--accent),transparent);transform:scaleY(0);transform-origin:top;
   transition:transform .7s var(--ease)}
-.card:hover{background:rgba(var(--accent-rgb),.07)}
+.card::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(260px circle at var(--mx) var(--my),rgba(var(--accent-rgb),.16),transparent 72%);
+  opacity:0;transition:opacity .4s ease}
+.card:hover{background:rgba(var(--accent-rgb),.07);transform:translateY(-5px)}
 .card:hover::before{transform:scaleY(1)}
+.card:hover::after{opacity:1}
+.card>*{position:relative;z-index:1}
 .card .num{font-family:var(--display);font-size:12px;letter-spacing:.28em;color:var(--accent);direction:ltr}
 .card h3{margin-top:22px;font-family:var(--display);font-size:26px;font-weight:700;letter-spacing:-.01em}
 .card p{margin-top:16px;color:var(--ink-2);font-size:15.5px;line-height:1.9;max-width:44ch}
@@ -476,12 +489,17 @@ body.gate .proj-card{animation-duration:9s}
 .steps{list-style:none;display:grid;grid-template-columns:repeat(4,1fr);gap:clamp(18px,2.4vw,34px);
   position:relative;padding-top:34px}
 .steps::before{content:"";position:absolute;top:0;inset-inline:0;height:1px;background:var(--rule-2)}
-.steps li{position:relative}
+.steps li{position:relative;transition:transform .5s var(--ease)}
 .steps li::before{content:"";position:absolute;top:-37px;inset-inline-end:0;width:7px;height:7px;
-  border-radius:50%;background:var(--gold);box-shadow:0 0 18px var(--gold)}
-.steps span{font-family:var(--display);font-size:12px;letter-spacing:.28em;color:var(--gold);direction:ltr}
+  border-radius:50%;background:var(--gold);box-shadow:0 0 18px var(--gold);
+  transition:box-shadow .4s ease,transform .4s var(--ease)}
+.steps span{font-family:var(--display);font-size:12px;letter-spacing:.28em;color:var(--gold);direction:ltr;
+  transition:color .35s ease}
 .steps h3{margin-top:18px;font-family:var(--display);font-size:21px;font-weight:700}
 .steps p{margin-top:14px;color:var(--ink-2);font-size:15.5px;line-height:1.9}
+.steps li:hover{transform:translateY(-4px)}
+.steps li:hover::before{box-shadow:0 0 30px var(--gold);transform:scale(1.35)}
+.steps li:hover span{color:var(--gold-hi)}
 
 /* ===== 10ב. אודות ===== */
 .about-grid{display:grid;grid-template-columns:1.15fr .85fr;gap:clamp(32px,5vw,80px);align-items:start}
@@ -490,10 +508,17 @@ body.gate .proj-card{animation-duration:9s}
 .about-copy .sec-sub strong{color:var(--ink);font-weight:700}
 .about-skills{list-style:none;display:grid;gap:1px;background:var(--rule-2);
   border:1px solid var(--rule-2);border-radius:18px;overflow:hidden}
-.about-skills li{display:grid;gap:9px;padding:clamp(22px,2.4vw,30px);
+.about-skills li{--accent-rgb:232,196,138;--mx:50%;--my:50%;position:relative;display:grid;gap:9px;
+  padding:clamp(22px,2.4vw,30px);
   background:rgba(7,9,14,.68);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
-  transition:background .6s ease}
-.about-skills li:hover{background:rgba(232,196,138,.07)}
+  transition:background .6s ease,transform .5s var(--ease)}
+.about-skills li:nth-child(3){--accent-rgb:var(--dim-rgb)}
+.about-skills li::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(240px circle at var(--mx) var(--my),rgba(var(--accent-rgb),.14),transparent 72%);
+  opacity:0;transition:opacity .4s ease}
+.about-skills li:hover{background:rgba(232,196,138,.07);transform:translateY(-4px)}
+.about-skills li:hover::after{opacity:1}
+.about-skills li>*{position:relative;z-index:1}
 .about-skills b{font-family:var(--display);font-size:18px;font-weight:700;color:var(--gold)}
 .about-skills li:nth-child(3) b{color:var(--dim)}
 .about-skills span{color:var(--ink-2);font-size:14.5px;line-height:1.8}
@@ -504,16 +529,18 @@ body.gate .proj-card{animation-duration:9s}
 .faq details{background:rgba(7,9,14,.7);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
   transition:background .5s ease}
 .faq details[open]{background:rgba(232,196,138,.05)}
+.faq details:hover{background:rgba(232,196,138,.045)}
 .faq summary{display:flex;align-items:center;gap:18px;cursor:pointer;list-style:none;
   padding:clamp(20px,2.2vw,26px) clamp(20px,2.4vw,30px);
   font-family:var(--display);font-weight:700;font-size:clamp(17px,1.7vw,21px);
-  letter-spacing:-.01em;transition:color .35s ease}
+  letter-spacing:-.01em;transition:color .35s ease,padding-inline-start .4s var(--ease)}
 .faq summary::-webkit-details-marker{display:none}
-.faq summary:hover{color:var(--gold)}
+.faq summary:hover{color:var(--gold);padding-inline-start:8px}
 .faq summary::after{content:"";width:14px;height:14px;flex:0 0 auto;margin-inline-start:auto;
   background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14'%3E%3Cpath d='M7 1v12M1 7h12' stroke='%23E8C48A' stroke-width='1.5'/%3E%3C/svg%3E") center/contain no-repeat;
-  transition:transform .45s var(--ease)}
+  transition:transform .45s var(--ease),filter .35s ease}
 .faq details[open] summary::after{transform:rotate(45deg)}
+.faq summary:hover::after{filter:drop-shadow(0 0 6px rgba(232,196,138,.65))}
 .faq-a{padding:0 clamp(20px,2.4vw,30px) clamp(22px,2.4vw,28px)}
 .faq details[open] .faq-a{animation:faqIn .5s var(--ease)}
 @keyframes faqIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}

@@ -595,5 +595,44 @@
     });
   }
 
+  /* ---------- "החייאת" עמודים 4–9: הטיה + ספוטלייטים עוקבי-סמן (עכבר בלבד, מכבד reduced-motion) ---------- */
+  if (window.matchMedia('(hover:hover) and (pointer:fine)').matches && !calmMode) {
+    /* ---------- כרטיסי פרויקטים: הטיה תלת-ממדית + ספוטלייט עוקב-סמן ----------
+       --mx/--my מזינים את הספוטלייט ב-CSS (.proj-card::before); ה-transform
+       מוזרק ישירות (לא ב-CSS) כדי לשלב הטיה עם הרמת ההובר הקיימת בלי לריב איתה. */
+    document.querySelectorAll('.pedestals .proj-card').forEach(card => {
+      card.addEventListener('pointerenter', () => card.classList.add('tilting'));
+      card.addEventListener('pointermove', e => {
+        const r = card.getBoundingClientRect();
+        const px = (e.clientX - r.left) / r.width;
+        const py = (e.clientY - r.top) / r.height;
+        card.style.setProperty('--mx', (px * 100) + '%');
+        card.style.setProperty('--my', (py * 100) + '%');
+        const rx = (0.5 - py) * 14;   // עד ~7°
+        const ry = (px - 0.5) * 14;
+        card.style.transform = `translateY(-16px) perspective(900px) rotateX(${rx}deg) rotateY(${ry}deg)`;
+      });
+      card.addEventListener('pointerleave', () => {
+        card.classList.remove('tilting');
+        card.style.transform = '';
+        card.style.removeProperty('--mx');
+        card.style.removeProperty('--my');
+      });
+    });
+
+    /* ---------- כרטיסי שירותים/אודות: ספוטלייט צבעוני עוקב-סמן (בלי הטיה) ---------- */
+    document.querySelectorAll('.grid-4 .card, .about-skills li').forEach(el => {
+      el.addEventListener('pointermove', e => {
+        const r = el.getBoundingClientRect();
+        el.style.setProperty('--mx', ((e.clientX - r.left) / r.width * 100) + '%');
+        el.style.setProperty('--my', ((e.clientY - r.top) / r.height * 100) + '%');
+      });
+      el.addEventListener('pointerleave', () => {
+        el.style.removeProperty('--mx');
+        el.style.removeProperty('--my');
+      });
+    });
+  }
+
   document.getElementById('yr').textContent = new Date().getFullYear();
 })();
