@@ -1,7 +1,12 @@
-import functools, http.server, socketserver, os
-ROOT = "/Users/avidigmi/Desktop/Claude/Projects/אתר תיק עבודות אבי/site"
-os.chdir(ROOT)
-H = functools.partial(http.server.SimpleHTTPRequestHandler, directory=ROOT)
-class S(socketserver.ThreadingTCPServer):
-    allow_reuse_address = True
-S(("127.0.0.1", 4321), H).serve_forever()
+"""קיצור דרך: מריץ את שרת האתר שיושב ב-local-site/serve.py.
+
+השרת האמיתי (כולל תמיכת HTTP Range, שחובה לניגון וידאו) נמצא שם.
+    python3 serve.py [port] [host]
+"""
+import os
+import runpy
+import sys
+
+TARGET = os.path.join(os.path.dirname(os.path.abspath(__file__)), "local-site", "serve.py")
+sys.argv = [TARGET] + sys.argv[1:]
+runpy.run_path(TARGET, run_name="__main__")

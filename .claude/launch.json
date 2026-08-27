@@ -2,10 +2,13 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "site",
+      "name": "studio-avi-static",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["/Users/avidigmi/Desktop/Claude/Projects/אתר תיק עבודות אבי/serve.py"],
-      "port": 4321
+      "runtimeArgs": [
+        "/Users/avidigmi/Desktop/Claude/Projects/אתר תיק עבודות אבי/local-site/serve.py",
+        "4455"
+      ],
+      "port": 4455
     }
   ]
 }

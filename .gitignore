@@ -4,3 +4,9 @@ _source/
 
 # נכסי הווידאו של גרסת Lovable כן נשמרים — הם דרושים לבנייה
 !lovable/public/video/*.mp4
+
+# הווידאו של האתר הסטטי החדש (H.264 8-bit + faststart) — האתר לא רץ בלעדיו
+!local-site/assets/video/*.mp4
+
+# הווידאו של פרויקט ה-React שנמשך מ-Lovable
+!studio-avi-showcase/public/video/*.mp4

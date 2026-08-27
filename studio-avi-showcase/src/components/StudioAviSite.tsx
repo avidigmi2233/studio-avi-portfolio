@@ -1,0 +1,1958 @@
+/* ==========================================================================
+   סטודיו אבי — אתר תיק עבודות קולנועי
+   הומר מ-HTML/Canvas סטטי ל-React + Tailwind.
+   שינוי ארכיטקטוני מהותי: מנוע רצפי-התמונות (1,162 קבצי WebP, 52MB) הוחלף
+   ב-<video> — הרצפים נוגנו לינארית עם callback בסיום, בדיוק מה ש-<video>
+   עושה נייטיב. התוצאה: ~33MB במקום 52MB, טעינה בזרימה במקום preload מלא.
+   ========================================================================== */
+
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  ArrowDown, ArrowUpRight, Plus, RotateCcw,
+  Film, Boxes, Target, ShoppingBag, Palette,
+  PhoneCall, PenTool, Rocket, Sparkles,
+} from "lucide-react";
+import { gsap } from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+import { cn } from "@/lib/utils";
+
+gsap.registerPlugin(ScrollTrigger);
+
+/* ========================== תוכן ========================== */
+
+const TOTAL_PAGES = 9;
+const CONTACT_EMAIL = "avidigmi14@gmail.com";
+const WHATSAPP = `https://wa.me/972556696675?text=${encodeURIComponent("היי אבי הגעתי מהאתר :) אשמח לפרטים בנוגע ל..")}`;
+
+/* ===== נכסי מדיה =====
+   הקטעים מוגשים מקומית ב-H.264 8-bit (baseline נתמך בכל דפדפן).
+   המקורות באיחסון החיצוני היו HEVC 10-bit ולכן לא נוגנו בכרום/פיירפוקס. */
+const MEDIA_BASE = "https://pgjhlctemibeidvpvudq.supabase.co/storage/v1/object/public/videos";
+const POSTER_SRC = `${MEDIA_BASE}/1.png`;
+const CLIP_SOURCES: Record<string, string> = {
+  s2: "/video/2.mp4",
+  s3: "/video/3.mp4",
+  s4: "/video/4.mp4",
+  s5: "/video/5.mp4",
+  s6: "/video/6.mp4",
+};
+
+
+
+type Act = {
+  n: 1 | 2 | 3;
+  eyebrow?: string;
+  lines: [string, string];
+  lede: React.ReactNode;
+  cta: string;
+  hint?: string;
+  clip: string;
+};
+
+const ACTS: Act[] = [
+  {
+    n: 1,
+    lines: ["אני בונה אתרים", "שלא מהעולם הזה"],
+    lede: (
+      <>
+        בזמן שהמתחרים שלכם תקועים בתבנית <strong className="font-bold text-foreground">אתם נכנסים דרך שער</strong>.
+        חוויות גלילה קולנועיות, עולמות תלת מימד ואנימציה שמספרות סיפור. אתרים שאנשים זוכרים, לא רק גוללים.
+      </>
+    ),
+    cta: "פתחו את השער",
+    hint: "לחץ כאן ונצא לדרך",
+    clip: "s2",
+  },
+  {
+    n: 2,
+    eyebrow: "הבידול",
+    lines: ["אתר רגיל מציג מידע.", "אתר שלי מייצר תחושה."],
+    lede: (
+      <>
+        לקוח שוכח מה כתוב באתר תוך שנייה — הוא לא שוכח איך האתר גרם לו להרגיש. כל פרויקט נבנה מאפס, כולל עולם
+        תלת מימד ותנועה משלו: <strong className="font-bold text-foreground">בלי ערכות עיצוב, בלי תבניות</strong>, בלי עוד אתר כמו כולם.
+      </>
+    ),
+    cta: "התקדמו אל הארמון",
+    clip: "s3",
+  },
+  {
+    n: 3,
+    eyebrow: "הכניסה",
+    lines: ["מאחורי הדלת הזו", "נמצא המותג שלכם"],
+    lede: (
+      <>
+        עיצוב, קוד, תלת מימד וביצועים  הכול תחת גג אחד. התוצאה: אתר שנטען מהר, מדורג בגוגל, וממיר מבקרים
+        ללקוחות בלי לוותר על שום רושם.
+      </>
+    ),
+    cta: "היכנסו פנימה",
+    clip: "s4",
+  },
+];
+
+const PROJECTS = [
+  {
+    no: "01",
+    href: "https://tayargroup.com/",
+    img: "/img/covers/tayar.jpg",
+    alt: "קאבר פרויקט טאיאר — אתר תדמית לחברת פתרונות ניקיון",
+    title: "טאיאר · פתרונות ניקיון",
+    body: "אתר תדמית B2B בעברית מלאה, שנבנה כדי להפוך גולשים ללידים: כותרת ראשית על גבי צילומי נכסים, תפריט צף ומסלול פנייה כפול — ייעוץ מקצועי או צפייה בשירותים.",
+    tag: "תדמית · B2B",
+  },
+  {
+    no: "02",
+    href: "https://projects.avidigmi.com/business-consultant/",
+    img: "/img/covers/dominic.webp",
+    alt: "קאבר פרויקט דומיניק — דף נחיתה למותג אישי",
+    title: "דומיניק · מיתוג אישי",
+    body: "דף נחיתה למותג אישי שממקם את האדם, לא את רשימת השירותים, במרכז: צילום סטודיו במסך מלא, ניגודיות גבוהה וטיפוגרפיה נקייה שמעבירות אמינות כבר בפגישה הראשונה עם הגולש.",
+    tag: "מיתוג אישי · Landing Page",
+  },
+  {
+    no: "03",
+    href: "https://timingwatches.co.il/home/",
+    img: "/img/covers/timing.jpg",
+    alt: "קאבר פרויקט טיימינג — קטלוג שעוני יוקרה",
+    title: "טיימינג · שעוני יוקרה",
+    body: "קטלוג בוטיק לשעונים מכניים שגורם למסך להרגיש כמו ויטרינה: צילומי מאקרו בפריים רחב, גלילה איטית ופרטים שנחשפים בהדרגה — תחושת חנות יוקרה, לא טבלת מוצרים.",
+    tag: "מסחר · קטלוג יוקרה",
+  },
+];
+
+const SKILLS = [
+  { b: "עיצוב", s: "שפה חזותית, טיפוגרפיה עברית, מערכת מסכים" },
+  { b: "פיתוח", s: "HTML · CSS · JavaScript, בלי תלות בתבניות" },
+  { b: "תלת מימד", s: "מידול, תאורה ורינדור — עולמות תלת ממדיים שרצים חלק בדפדפן", accent: "dim" as const },
+  { b: "אנימציה", s: "גלילה, רצפי תמונות, מעברים מבוססי תנועה" },
+  { b: "ביצועים", s: "מהירות טעינה, נגישות, SEO טכני" },
+];
+
+const SERVICES = [
+  { num: "01", h: "אתרי תדמית קולנועיים", p: "חוויית גלילה עם וידאו מפורק לפריימים, אנימציות מבוססות תנועה וסיפור שמתגלה שלב אחרי שלב — כמו סרט קצר על המותג שלכם." },
+  { num: "02", h: "עולמות תלת מימד", p: "סצנות ואובייקטים תלת ממדיים בזמן אמת בתוך הדפדפן — לוגו שמסתובב, מוצר שאפשר לסובב, סצנה שמגיבה לגלילה. לא סרטון, אתר שחי.", accent: "dim" as const },
+  { num: "03", h: "דפי נחיתה שממירים", p: "עיצוב שמושך את העין ומבנה שמוביל ללחיצה. מהירות, בהירות ומסר אחד חד — בלי הסחות דעת, לקמפיינים שצריכים להמיר מהיום הראשון." },
+  { num: "04", h: "חנויות ומערכות", p: "מסחר אונליין, אזורים אישיים וממשקי ניהול. פונקציונליות מלאה בעטיפה שלא נראית כמו תבנית." },
+  { num: "05", h: "מיתוג דיגיטלי מלא", p: "שפה חזותית, טיפוגרפיה עברית, מוטיבים, אנימציה ותלת מימד — מערכת שלמה שעובדת בכל מסך ובכל מדיה." },
+];
+
+/** אייקונים לכרטיסי השירות — לפי הסדר ב-SERVICES */
+const SERVICE_ICONS = [Film, Boxes, Target, ShoppingBag, Palette];
+/** אייקונים לשלבי התהליך */
+const STEP_ICONS = [PhoneCall, PenTool, Sparkles, Rocket];
+
+const STEPS = [
+  { n: "01", h: "שיחת גילוי", p: "מבינים את המותג, הקהל והמטרה. יוצאים עם כיוון יצירתי אחד ברור." },
+  { n: "02", h: "קונספט ועיצוב", p: "מסך ראשון שמכריע. מכאן בונים שפה שלמה — כולל עולם תלת מימד כשרלוונטי — לכל שאר האתר." },
+  { n: "03", h: "פיתוח ואנימציה", p: "קוד נקי, אנימציית תנועה ותלת מימד אינטראקטיבי, אופטימיזציה לנייד ולמנועי חיפוש." },
+  { n: "04", h: "שיגור וליווי", p: "עולים לאוויר, מודדים, משפרים. אתם לא נשארים לבד אחרי המסירה." },
+];
+
+const FAQ = [
+  { q: "כמה עולה אתר כזה?", a: "אין מחירון אחיד, כי אין שני פרויקטים זהים. אתר תדמית מתחיל בדרך כלל באזור 8,000 ₪, וחוויה קולנועית מלאה עם עולם תלת מימד, רצפי תמונות ואנימציה נעה בטווח גבוה יותר. אחרי שיחה אחת קצרה תקבלו הצעת מחיר מפורטת, ללא עלות וללא התחייבות." },
+  { q: "כמה זמן לוקח לבנות?", a: "דף נחיתה — שבועיים עד שלושה. אתר תדמית מלא — ארבעה עד שמונה שבועות, תלוי בכמות התוכן ובהיקף האנימציה. אני עובד על מספר פרויקטים מצומצם במקביל, כך שלוח הזמנים שנקבע בהתחלה הוא זה שנשמר." },
+  { q: "האם האתר יהיה מהיר גם עם כל האנימציות?", a: "כן — זה בדיוק העניין. הכול נכתב ידנית בלי ספריות מיותרות ובלי בילדרים, אלמנטים תלת ממדיים נטענים ומותאמים במשקל הנכון למסך, התמונות נשלחות בפורמט WebP במידה המדויקת, והחוויות הכבדות נטענות ברקע בזמן שאתם כבר קוראים. האתר הזה עצמו נטען בכ-1.2 שניות." },
+  { q: "אני יכול לערוך את התוכן בעצמי אחר כך?", a: "בהחלט. אם זה חשוב לכם, אני מחבר את האתר למערכת ניהול תוכן פשוטה שמאפשרת לעדכן טקסטים, תמונות ופרויקטים בלי לגעת בקוד. אם אתם מעדיפים שאני אטפל בעדכונים — יש גם מסלול ליווי חודשי." },
+  { q: "למי שייך האתר בסוף?", a: "לכם. הקוד, העיצוב, הדומיין והחשבונות רשומים על שמכם ומועברים אליכם במסירה. אין נעילה לפלטפורמה שלי ואין דמי שימוש חודשיים כדי שהאתר פשוט ימשיך לעבוד." },
+];
+
+const MENU = [
+  { p: 1, name: "פתיחה", note: "מסך הכניסה" },
+  { p: 2, name: "הבידול", note: "למה זה שונה" },
+  { p: 3, name: "הכניסה", note: "אל מאחורי הדלת" },
+  { p: 4, name: "פרויקטים", note: "הפורטפוליו" },
+  { p: 5, name: "אודות", note: "מי עומד מאחורי זה" },
+  { p: 6, name: "שירותים", note: "מה אני בונה" },
+  { p: 7, name: "תהליך", note: "איך זה עובד" },
+  { p: 8, name: "שאלות נפוצות", note: "מחיר, זמנים, בעלות" },
+  { p: 9, name: "יצירת קשר", note: "הצעד האחרון" },
+];
+
+/* ========================== עזרים ========================== */
+
+const pad = (n: number) => String(n).padStart(2, "0");
+
+/** האם המכשיר תומך בריחוף עכבר אמיתי — כל אפקטי הסמן מגודרים מאחורי זה */
+function useFinePointer() {
+  const [fine, setFine] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(hover:hover) and (pointer:fine)");
+    const on = () => setFine(mq.matches);
+    on();
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+  return fine;
+}
+
+function useReducedMotion() {
+  const [calm, setCalm] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const on = () => setCalm(mq.matches);
+    on();
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+  return calm;
+}
+
+/* ========================== פרימיטיבים עיצוביים ==========================
+   שלושה מוטיבים מהרפרנס: מפריד מעוטר עם נקודת אור, מסגרת-גרדיאנט זהב,
+   ובריכת אור בתחתית הכרטיס. הם מה שמעלה את הנראות מ"נקי" ל"מוקפד".
+   ======================================================================= */
+
+/** מפריד מעוטר — קו זהב דק שנמוג לצדדים עם מעוין זוהר במרכז */
+function Ornament({ className, w = "w-16" }: { className?: string; w?: string }) {
+  return (
+    <span aria-hidden className={cn("inline-flex items-center gap-3", className)}>
+      <span className={cn("h-px bg-gradient-to-l from-gold/55 to-transparent", w)} />
+      <span className="h-[5px] w-[5px] rotate-45 bg-gold shadow-[0_0_10px_hsl(var(--gold)),0_0_20px_hsl(var(--gold)/0.5)]" />
+      <span className={cn("h-px bg-gradient-to-r from-gold/55 to-transparent", w)} />
+    </span>
+  );
+}
+
+/**
+ * כרטיס עם מסגרת-גרדיאנט ובריכת אור.
+ * המסגרת נבנית משכבת גרדיאנט ברוחב 1px (טכניקת p-px) — לא border רגיל,
+ * כי border לא תומך בגרדיאנט. הזוהר התחתון הוא אליפסה מטושטשת.
+ */
+function GlowCard({
+  children,
+  accent = "gold",
+  className,
+  innerClassName,
+  bloom = true,
+}: {
+  children: React.ReactNode;
+  accent?: "gold" | "dim";
+  className?: string;
+  innerClassName?: string;
+  bloom?: boolean;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const fine = useFinePointer();
+  const v = accent === "dim" ? "var(--dim)" : "var(--gold)";
+
+  const onMove = (e: React.PointerEvent) => {
+    if (!fine || !ref.current) return;
+    const r = ref.current.getBoundingClientRect();
+    ref.current.style.setProperty("--mx", `${((e.clientX - r.left) / r.width) * 100}%`);
+    ref.current.style.setProperty("--my", `${((e.clientY - r.top) / r.height) * 100}%`);
+  };
+
+  return (
+    <div
+      ref={ref}
+      onPointerMove={onMove}
+      onPointerLeave={() => {
+        ref.current?.style.removeProperty("--mx");
+        ref.current?.style.removeProperty("--my");
+      }}
+      style={{ ["--a" as string]: v }}
+      className={cn(
+        "group/card relative rounded-2xl p-px transition-transform duration-500 ease-cinematic hover:-translate-y-1.5",
+        "[--mx:50%] [--my:0%]",
+        "bg-[linear-gradient(180deg,hsl(var(--a)/0.34),hsl(var(--a)/0.06)_38%,transparent_72%)]",
+        "hover:bg-[linear-gradient(180deg,hsl(var(--a)/0.6),hsl(var(--a)/0.12)_38%,transparent_72%)]",
+        className
+      )}
+    >
+      <div
+        className={cn(
+          "relative h-full overflow-hidden rounded-2xl bg-[hsl(224_28%_5%/0.82)] backdrop-blur-xl",
+          innerClassName
+        )}
+      >
+        {/* ספוטלייט עוקב-סמן */}
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-500 group-hover/card:opacity-100"
+          style={{ background: `radial-gradient(300px circle at var(--mx) var(--my),hsl(var(--a)/0.14),transparent 70%)` }}
+        />
+        {/* בריכת אור תחתונה — החתימה של הרפרנס */}
+        {bloom && (
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-x-[18%] -bottom-10 h-20 rounded-[50%] opacity-45 blur-2xl transition-opacity duration-500 group-hover/card:opacity-90"
+            style={{ background: `hsl(var(--a)/0.55)` }}
+          />
+        )}
+        {/* קו אור על השפה העליונה */}
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-l from-transparent via-[hsl(var(--a)/0.5)] to-transparent opacity-60"
+        />
+        <div className="relative">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+/** חשיפה בגלילה מבוססת GSAP — מחליפה את IntersectionObserver בסקשנים 4–9 */
+function useGsapReveal(scope: React.RefObject<HTMLElement | null>, enabled = true) {
+  useLayoutEffect(() => {
+    if (!enabled || !scope.current) return;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const ctx = gsap.context(() => {
+      if (reduce) {
+        gsap.set("[data-rv]", { opacity: 1, y: 0 });
+        return;
+      }
+      gsap.utils.toArray<HTMLElement>("[data-rv]").forEach((el) => {
+        gsap.fromTo(
+          el,
+          { opacity: 0, y: 34 },
+          {
+            opacity: 1,
+            y: 0,
+            duration: 1,
+            ease: "power3.out",
+            delay: Number(el.dataset.rv || 0) / 1000,
+            scrollTrigger: { trigger: el, start: "top 88%", once: true },
+          }
+        );
+      });
+    }, scope);
+    return () => ctx.revert();
+  }, [scope, enabled]);
+}
+
+/* ========================== סמל המותג ========================== */
+/* מוח תלת-ממדי זכוכי עם מעגלים זוהרים — מופיע לצד הטקסט "סטודיו אבי". */
+function BrandMark({ className }: { className?: string }) {
+  return (
+    <img
+      src="/img/logo-brain.png"
+      alt=""
+      aria-hidden="true"
+      className={cn("block h-full w-full object-contain", className)}
+    />
+  );
+}
+
+/* ========================== כפתור קולנועי ========================== */
+/* כפתור המותג — גרדיאנט זהב, ברק חולף ואפקט מגנטי. מכוון לא להיות shadcn Button:
+   הווריאנטים שלו נלחמים בעיצוב הבספוק הזה. */
+function CineButton({
+  children,
+  onClick,
+  disabled,
+  loading,
+  loadingText = "טוען···",
+  variant = "main",
+  full,
+  className,
+  type = "button",
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+  loading?: boolean;
+  loadingText?: string;
+  variant?: "main" | "ghost";
+  full?: boolean;
+  className?: string;
+  type?: "button" | "submit";
+}) {
+  const ref = useRef<HTMLButtonElement>(null);
+  const fine = useFinePointer();
+
+  const onMove = (e: React.PointerEvent) => {
+    if (!fine || !ref.current) return;
+    const r = ref.current.getBoundingClientRect();
+    const x = (e.clientX - r.left - r.width / 2) * 0.16;
+    const y = (e.clientY - r.top - r.height / 2) * 0.28;
+    ref.current.style.transform = `translate(${x}px, ${y - 3}px)`;
+  };
+  const onLeave = () => {
+    if (ref.current) ref.current.style.transform = "";
+  };
+
+  return (
+    <button
+      ref={ref}
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      onPointerMove={onMove}
+      onPointerLeave={onLeave}
+      className={cn(
+        "group relative isolate inline-flex min-h-[58px] items-center justify-center gap-2.5 overflow-hidden rounded-full px-9",
+        "text-[15px] font-bold tracking-[0.03em] transition-[transform,box-shadow,background,color,border-color] duration-500 ease-cinematic",
+        variant === "main" && [
+          "border border-transparent text-ink-inverse",
+          "bg-[linear-gradient(102deg,hsl(var(--gold-hi))_0%,hsl(var(--gold))_46%,hsl(var(--gold-dp))_100%)]",
+          "shadow-[0_14px_40px_-14px_hsl(var(--gold)/0.75),inset_0_1px_0_hsl(0_0%_100%/0.6)]",
+          "hover:shadow-[0_24px_60px_-16px_hsl(var(--gold)/0.95),inset_0_1px_0_hsl(0_0%_100%/0.75)]",
+          "disabled:cursor-progress disabled:bg-none disabled:bg-gold/20 disabled:text-gold-hi disabled:shadow-none disabled:border-gold/20",
+        ],
+        variant === "ghost" && [
+          "border border-foreground/25 bg-stage/60 text-foreground backdrop-blur-md",
+          "hover:border-gold hover:bg-gold/15 hover:shadow-[0_18px_44px_-20px_hsl(0_0%_0%/0.9)]",
+        ],
+        full && "w-full",
+        "max-md:w-full",
+        className
+      )}
+    >
+      {/* ברק חולף */}
+      {variant === "main" && (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-0 z-[1] -translate-x-[130%] bg-[linear-gradient(110deg,transparent_36%,hsl(0_0%_100%/0.75)_50%,transparent_64%)] transition-transform duration-1000 ease-cinematic group-hover:translate-x-[130%]"
+        />
+      )}
+      <span className={cn("relative z-[2] transition", loading && "-translate-y-2.5 opacity-0")}>{children}</span>
+      {loading && (
+        <span className="absolute inset-0 z-[2] flex items-center justify-center text-[13px] tracking-[0.22em]">{loadingText}</span>
+      )}
+    </button>
+  );
+}
+
+/* ========================== המסך הקולנועי ========================== */
+
+const CLIP_ORDER = ["s2", "s3", "s4", "s5", "s6"] as const;
+
+function Stage({
+  clip,
+  playId,
+  loop,
+  onEnded,
+  dim,
+}: {
+  clip: string | null;
+  playId: number;
+  loop: boolean;
+  onEnded?: () => void;
+  dim: number;
+  small: boolean;
+}) {
+  const calm = useReducedMotion();
+  const src = clip ? CLIP_SOURCES[clip] : undefined;
+
+  /* שני נגנים מתחלפים (A/B) — הקטע החדש נטען מוסתר ונחשף רק כשהוא באמת מנגן,
+     כך שהפריים הקודם נשאר על המסך ואין הבזק של הפוסטר. */
+  const [slots, setSlots] = useState<[string | undefined, string | undefined]>([src, undefined]);
+  const [active, setActive] = useState<0 | 1>(0);
+  const [started, setStarted] = useState(false);
+  const refs = useRef<Array<HTMLVideoElement | null>>([null, null]);
+  /* נעילת סיום לפי מזהה ניגון — אותו קטע יכול להתנגן שוב ולשגר onEnded שוב */
+  const endedFor = useRef<number | null>(null);
+
+  /* טעינה מוקדמת של הקטע הבא בסדר ההופעה */
+  const nextIdx = clip ? CLIP_ORDER.indexOf(clip as (typeof CLIP_ORDER)[number]) + 1 : 0;
+  const preloadName = CLIP_ORDER[nextIdx];
+  const preloadSrc = preloadName ? CLIP_SOURCES[preloadName] : undefined;
+
+  /* החלפת שכבה (קרוספייד) — הפריים הקודם נשאר עד סוף הדעיכה */
+  const reveal = useCallback(
+    (i: 0 | 1) => {
+      setStarted(true);
+      setActive((cur) => {
+        if (cur === i) return cur;
+        const old = cur;
+        window.setTimeout(
+          () =>
+            setSlots((s) => {
+              const n: [string | undefined, string | undefined] = [s[0], s[1]];
+              n[old] = undefined;
+              return n;
+            }),
+          calm ? 0 : 480
+        );
+        return i;
+      });
+    },
+    [calm]
+  );
+
+  useEffect(() => {
+    if (!src) {
+      setSlots([undefined, undefined]);
+      setActive(0);
+      return;
+    }
+    if (slots[active] === src) return;
+    const idle = (active === 0 ? 1 : 0) as 0 | 1;
+    if (slots[idle] !== src) {
+      setSlots((s) => {
+        const n: [string | undefined, string | undefined] = [s[0], s[1]];
+        n[idle] = src;
+        return n;
+      });
+    }
+    /* ביטחון: בודקים מוכנוּת שוב ושוב ומחליפים ברגע שיש פריים אמיתי.
+       רק אם עברו 6 שניות בלי מוכנוּת — מחליפים בכל מקרה כדי לא להיתקע. */
+    const start = Date.now();
+    const iv = window.setInterval(() => {
+      const v = refs.current[idle];
+      const ready = !!v && v.readyState >= 2;
+      if (ready || Date.now() - start > 6000) {
+        if (v) {
+          try {
+            if (v.currentTime > 0.05) v.currentTime = 0;
+          } catch {
+            /* מתעלמים */
+          }
+          const p = v.play();
+          if (p) p.catch(() => {});
+        }
+        reveal(idle);
+        window.clearInterval(iv);
+      }
+    }, 120);
+
+    return () => window.clearInterval(iv);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [src]);
+
+  useEffect(() => {
+    slots.forEach((s, i) => {
+      const v = refs.current[i];
+      if (!v || !s) return;
+      /* הקטע הנכנס מתחיל תמיד מהפריים הראשון — כך אין הצגת פריים שיורי */
+      if (v.currentTime > 0.05 && i !== active) {
+        try {
+          v.currentTime = 0;
+        } catch {
+          /* מתעלמים — הדפדפן עדיין לא מוכן לחיפוש */
+        }
+      }
+      if (v.paused) {
+        const p = v.play();
+        if (p) p.catch(() => {});
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slots]);
+
+  const finish = useCallback(() => {
+    if (endedFor.current === playId) return;
+    endedFor.current = playId;
+    onEnded?.();
+  }, [playId, onEnded]);
+
+  return (
+    <div className="fixed inset-0 z-0 bg-stage">
+      {/* פוסטר פתיחה — שכבה נפרדת שנדעכת ברגע שקטע ראשון מנגן, כדי שלא תבזיק שוב */}
+      <img
+        src={POSTER_SRC}
+        alt=""
+        aria-hidden
+        className={cn(
+          "absolute inset-0 h-full w-full object-cover transition-opacity duration-500 motion-reduce:transition-none",
+          started ? "opacity-0" : "opacity-100"
+        )}
+      />
+
+      {([0, 1] as const).map((i) => {
+        const s = slots[i];
+        const isActive = active === i;
+
+        return (
+          <video
+            key={i}
+            ref={(el) => {
+              refs.current[i] = el;
+            }}
+            src={s}
+            muted
+            playsInline
+            preload="auto"
+            loop={loop && isActive}
+            onLoadedData={(e) => {
+              /* מוודאים פריים ראשון לפני חשיפה */
+              const v = e.currentTarget;
+              if (!isActive && v.currentTime > 0.05) {
+                try {
+                  v.currentTime = 0;
+                } catch {
+                  /* מתעלמים */
+                }
+              }
+              const p = v.play();
+              if (p) p.catch(() => {});
+            }}
+            onPlaying={(e) => {
+              /* נחשף רק כשיש באמת פריים מוכן על המסך */
+              if (slots[i] && e.currentTarget.readyState >= 3) reveal(i);
+            }}
+            onCanPlayThrough={() => {
+              if (slots[i] && !isActive) reveal(i);
+            }}
+            onTimeUpdate={(e) => {
+              if (slots[i] && !isActive && e.currentTarget.currentTime > 0 && e.currentTarget.readyState >= 3) reveal(i);
+            }}
+            onEnded={() => {
+              if (!isActive || !s) return;
+              finish();
+            }}
+            onError={() => {
+              /* כשל טעינה — משאירים את הפריים הקודם על המסך (בלי הבזק)
+                 וממשיכים לחלק הבא */
+              if (!s) return;
+              finish();
+            }}
+
+            /* structural: ממלא את המסך; object-cover שומר על יחס גובה-רוחב בלי עיוות */
+            className={cn(
+              "absolute inset-0 h-full w-full object-cover transition-opacity motion-reduce:transition-none",
+              isActive && s ? "opacity-100" : "opacity-0",
+              calm ? "duration-0" : "duration-[420ms]"
+            )}
+            style={{ zIndex: isActive ? 1 : 0 }}
+          />
+        );
+      })}
+
+      {/* טעינה מוקדמת אמיתית של הקטע הבא — לא display:none, אחרת הדפדפן מדלל את הטעינה */}
+      {preloadSrc && (
+        <>
+          <link rel="preload" as="video" href={preloadSrc} />
+          <video
+            src={preloadSrc}
+            preload="auto"
+            muted
+            playsInline
+            aria-hidden
+            tabIndex={-1}
+            className="pointer-events-none absolute h-px w-px opacity-0"
+          />
+        </>
+      )}
+
+
+
+
+      {/* סקרים כיווני — מוקטן במכוון (‎~30% פחות אטימות מהמקור) כדי שהווידאו
+          יישאר גלוי; הקריאוּת מוחזרת ע"י text-shadow על הטקסט עצמו. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 transition-opacity duration-700 max-md:hidden"
+        style={{
+          background:
+            "linear-gradient(to left,hsl(var(--stage)/0.72) 0%,hsl(var(--stage)/0.5) 20%,hsl(var(--stage)/0.2) 42%,transparent 62%)," +
+            "linear-gradient(to top,hsl(var(--stage)/0.66) 0%,hsl(var(--stage)/0.2) 24%,transparent 48%)," +
+            "linear-gradient(to bottom,hsl(var(--stage)/0.5) 0%,transparent 18%)",
+        }}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 md:hidden"
+        style={{
+          background:
+            "linear-gradient(to top,hsl(var(--stage)/0.82) 0%,hsl(var(--stage)/0.46) 30%,transparent 62%)," +
+            "linear-gradient(to bottom,hsl(var(--stage)/0.5) 0%,transparent 20%)",
+        }}
+      />
+
+      {/* גרעין פילם */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -inset-1/2 animate-grain opacity-[0.045] motion-reduce:animate-none"
+        style={{
+          backgroundImage:
+            "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E\")",
+        }}
+      />
+      {/* ויניית */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{ background: "radial-gradient(125% 95% at 50% 45%,transparent 38%,hsl(0 0% 0%/0.38) 78%,hsl(0 0% 0%/0.72) 100%)" }}
+      />
+      {/* מעמעם לפי גלילה */}
+      <div aria-hidden className="pointer-events-none absolute inset-0 bg-stage transition-opacity duration-500" style={{ opacity: dim }} />
+    </div>
+  );
+}
+
+/* ========================== מסגרת ופסים ========================== */
+
+function CineFrame({ page, progress }: { page: number; progress: number }) {
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none fixed z-[86] rounded-[var(--frame-r)] border border-gold/20"
+      style={{ inset: "var(--frame)" }}
+    >
+      {[
+        "top-[5px] start-[5px] border-t border-s",
+        "top-[5px] end-[5px] border-t border-e",
+        "bottom-[5px] start-[5px] border-b border-s",
+        "bottom-[5px] end-[5px] border-b border-e",
+      ].map((c, i) => (
+        <span key={i} className={cn("absolute h-[18px] w-[18px] border-gold-hi opacity-55 max-md:h-3 max-md:w-3", c)} />
+      ))}
+
+      <span className="absolute top-1/2 start-3 -translate-y-1/2 whitespace-nowrap text-[9.5px] uppercase tracking-[0.34em] text-muted-ink [writing-mode:vertical-rl] max-md:hidden">
+        סטודיו אבי — EST. 2026
+      </span>
+      <span className="absolute top-1/2 end-3 -translate-y-1/2 rotate-180 whitespace-nowrap text-[9.5px] uppercase tracking-[0.34em] text-ink-3 [writing-mode:vertical-rl] max-md:hidden">
+        PAGE {pad(page)} OF {pad(TOTAL_PAGES)}
+      </span>
+
+      <div className="absolute -top-px inset-x-[-1px] h-0.5 overflow-hidden rounded-t-[var(--frame-r)]">
+        <div
+          className="h-full bg-[linear-gradient(90deg,hsl(var(--dim)),hsl(var(--gold)))] shadow-[0_0_20px_hsl(var(--gold))] transition-[width] duration-150"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+/* ========================== ראש ותחתית ========================== */
+
+function TopRail({
+  scrolled,
+  showSkip,
+  showRestart,
+  menuOpen,
+  onSkip,
+  onRestart,
+  onMenu,
+  onLogo,
+}: {
+  scrolled: boolean;
+  showSkip: boolean;
+  showRestart: boolean;
+  menuOpen: boolean;
+  onSkip: () => void;
+  onRestart: () => void;
+  onMenu: () => void;
+  onLogo: () => void;
+}) {
+  return (
+    <header
+      className="fixed z-[92] flex items-center justify-between gap-5"
+      style={{ insetInline: "calc(var(--frame) + clamp(14px,2.4vw,30px))", top: "calc(var(--frame) + 15px)" }}
+    >
+      <div
+        aria-hidden
+        className={cn(
+          "pointer-events-none absolute -z-10 h-[170px] transition-opacity duration-500",
+          scrolled && !menuOpen ? "opacity-100" : "opacity-0"
+        )}
+        style={{
+          insetInline: "calc(-1 * (var(--frame) + clamp(14px,2.4vw,30px)))",
+          top: "calc(-1 * (var(--frame) + 15px))",
+          background: "linear-gradient(hsl(var(--stage)/0.82),hsl(var(--stage)/0.34) 46%,transparent)",
+        }}
+      />
+      <button
+        onClick={onLogo}
+        aria-label="סטודיו אבי — לראש העמוד"
+        tabIndex={menuOpen ? -1 : undefined}
+        className={cn(
+          "group inline-flex items-center gap-3 text-foreground transition-opacity duration-300",
+          menuOpen && "pointer-events-none opacity-0"
+        )}
+      >
+        <span className="h-[30px] w-[30px] shrink-0 text-foreground transition-[filter] duration-500 max-md:h-[26px] max-md:w-[26px] [filter:drop-shadow(0_0_14px_hsl(var(--foreground)/0.28))] group-hover:[filter:drop-shadow(0_0_20px_hsl(var(--foreground)/0.45))]">
+          <BrandMark />
+        </span>
+        <span className="font-display text-[12.5px] font-bold tracking-[0.12em]">סטודיו אבי</span>
+      </button>
+
+      <div className="flex items-center gap-[18px] max-md:gap-2.5">
+        {showSkip && (
+          <button
+            onClick={onSkip}
+            tabIndex={menuOpen ? -1 : undefined}
+            className={cn(
+              "group relative px-0.5 py-2.5 text-[12.5px] tracking-[0.08em] text-ink-3 transition-[color,opacity] duration-300 hover:text-gold",
+              menuOpen && "pointer-events-none opacity-0"
+            )}
+          >
+            דלגו לאתר
+            <span className="absolute inset-x-0.5 bottom-1.5 h-px origin-right scale-x-0 bg-gold transition-transform duration-500 ease-cinematic group-hover:scale-x-100" />
+          </button>
+        )}
+        {showRestart && (
+          <button
+            onClick={onRestart}
+            tabIndex={menuOpen ? -1 : undefined}
+            className={cn(
+              "group relative px-0.5 py-2.5 text-[12.5px] tracking-[0.08em] text-ink-3 transition-[color,opacity] duration-300 hover:text-gold",
+              menuOpen && "pointer-events-none opacity-0"
+            )}
+          >
+            חזרה להקדמה
+            <span className="absolute inset-x-0.5 bottom-1.5 h-px origin-right scale-x-0 bg-gold transition-transform duration-500 ease-cinematic group-hover:scale-x-100" />
+          </button>
+        )}
+        <button
+          onClick={onMenu}
+          aria-expanded={menuOpen}
+          aria-controls="site-menu"
+          aria-label={menuOpen ? "סגירת תפריט" : "פתיחת תפריט"}
+          className="inline-flex items-center gap-3 rounded-full border border-gold/20 bg-stage/55 px-[18px] py-2.5 text-[12.5px] tracking-[0.14em] text-ink-2 backdrop-blur-md transition-colors hover:border-gold hover:bg-gold/10 hover:text-foreground max-md:gap-2 max-md:px-3.5 max-md:py-2 max-md:text-[11.5px]"
+        >
+          <span>{menuOpen ? "סגירה" : "תפריט"}</span>
+          <span aria-hidden className="relative h-2.5 w-4">
+            <i
+              className={cn(
+                "absolute start-0 h-px w-full bg-current transition-all duration-500 ease-cinematic",
+                menuOpen ? "top-1/2 -translate-y-1/2 rotate-45" : "top-0"
+              )}
+            />
+            <i
+              className={cn(
+                "absolute end-0 h-px bg-current transition-all duration-500 ease-cinematic",
+                menuOpen ? "top-1/2 w-full -translate-y-1/2 -rotate-45" : "bottom-0 w-[64%]"
+              )}
+            />
+          </span>
+        </button>
+      </div>
+    </header>
+  );
+}
+
+/* ========================== סרגל עמודים אנכי (סולם) ========================== */
+function PageRail({
+  page,
+  onGoto,
+  hidden,
+  hideOnMobile,
+}: {
+  page: number;
+  onGoto: (n: number) => void;
+  hidden: boolean;
+  hideOnMobile?: boolean;
+}) {
+  return (
+    <nav
+      aria-label="קפיצה לעמוד"
+      className={cn(
+        "fixed z-[92] flex flex-col items-center gap-3 transition-opacity duration-300",
+        /* דסקטופ — צד שמאל, ממורכז אנכית */
+        "left-[calc(var(--frame)+clamp(14px,2.4vw,30px))] top-1/2 -translate-y-1/2",
+        /* נייד — תחתית המסך, ממורכז אופקית, קומפקטי עם רקע מטושטש לקריאוּת מעל תוכן */
+        "max-md:left-1/2 max-md:top-auto max-md:bottom-[calc(var(--frame)+8px)] max-md:-translate-x-1/2 max-md:translate-y-0",
+        "max-md:gap-1 max-md:rounded-[18px] max-md:bg-stage/55 max-md:px-1.5 max-md:py-2 max-md:ring-1 max-md:ring-gold/15 max-md:backdrop-blur-md",
+        hidden && "pointer-events-none opacity-0",
+        hideOnMobile && "max-md:pointer-events-none max-md:opacity-0"
+      )}
+    >
+      {/* מונה עמודים */}
+      <div className="flex flex-col items-center gap-0.5" dir="ltr" aria-live="polite">
+        <span className="bg-[linear-gradient(180deg,hsl(var(--gold-hi)),hsl(var(--gold-dp)))] bg-clip-text font-display text-[clamp(18px,1.6vw,24px)] font-bold leading-none text-transparent [filter:drop-shadow(0_2px_10px_hsl(0_0%_0%/0.85))] max-md:text-[13px]">
+          {pad(page)}
+        </span>
+        <span aria-hidden className="h-3.5 w-px bg-gold/40 max-md:hidden" />
+        <span className="font-display text-[10px] font-bold leading-none text-ink-3 [text-shadow:0_2px_10px_hsl(0_0%_0%/0.85)] max-md:text-[8px]">{pad(TOTAL_PAGES)}</span>
+      </div>
+
+      {/* פסי הסולם — אנכי בדסקטופ, פס-לצד-פס בנייד */}
+      <div className="flex flex-col gap-[10px] max-md:flex-row max-md:gap-[10px]">
+        {MENU.map((m) => (
+          <button
+            key={m.p}
+            onClick={() => onGoto(m.p)}
+            aria-label={`עמוד ${m.p} · ${m.name}`}
+            aria-current={page === m.p ? "true" : undefined}
+            className="group flex h-[28px] w-[44px] cursor-pointer items-center justify-center rounded-full py-[5px] transition-transform duration-300 ease-cinematic hover:scale-110 max-md:h-[22px] max-md:w-[30px] max-md:py-0"
+          >
+            <span
+              className={cn(
+                "block h-[6px] rounded-full transition-all duration-300 ease-cinematic max-md:h-[3px]",
+                page === m.p
+                  ? "w-full bg-[linear-gradient(90deg,hsl(var(--gold-hi)),hsl(var(--gold-dp)))] shadow-[0_0_14px_hsl(var(--gold)/0.55)]"
+                  : "w-[60%] bg-foreground/25 group-hover:w-[80%] group-hover:bg-gold/60"
+              )}
+            />
+          </button>
+        ))}
+      </div>
+    </nav>
+  );
+}
+
+/* ========================== כפתור וואטסאפ קבוע בפינה ========================== */
+function WhatsAppButton({ hidden }: { hidden?: boolean }) {
+  return (
+    <a
+      href={WHATSAPP}
+      target="_blank"
+      rel="noopener"
+      aria-label="פתיחת צ'אט וואטסאפ"
+      className={cn(
+        "fixed z-[92] inline-flex items-center gap-2.5 rounded-full border border-gold/25 bg-stage/60 px-[18px] py-2.5 text-[13px] tracking-[0.06em] text-gold-hi backdrop-blur-md transition-all duration-300 hover:border-gold hover:bg-gold/10 hover:text-gold hover:shadow-[0_0_20px_hsl(var(--gold)/0.25)] max-md:px-3 max-md:py-2.5",
+        hidden && "pointer-events-none opacity-0"
+      )}
+      style={{ right: "calc(var(--frame) + clamp(14px,2.4vw,30px))", bottom: "calc(var(--frame) + 15px)" }}
+    >
+      <svg className="h-[18px] w-[18px] shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.134 1.585 5.943L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
+      </svg>
+      <span className="max-md:hidden">וואטסאפ</span>
+    </a>
+  );
+}
+
+/* ========================== רמז גלילה תחתון ========================== */
+function ScrollCue({ onCue, show, hidden }: { onCue: () => void; show: boolean; hidden?: boolean }) {
+  if (!show) return null;
+  return (
+    <button
+      onClick={onCue}
+      aria-label="גללו למטה"
+      className={cn(
+        "fixed left-1/2 bottom-[calc(var(--frame)+15px)] z-[92] inline-flex -translate-x-1/2 animate-cue-float items-center gap-3 whitespace-nowrap rounded-full border border-gold/55 bg-stage/70 py-3 pe-[18px] ps-[22px] text-[13.5px] tracking-[0.08em] text-gold-hi backdrop-blur-lg transition-colors hover:border-gold hover:bg-gold/15 motion-reduce:animate-none max-md:bottom-[calc(var(--frame)+96px)] max-md:gap-2 max-md:px-4 max-md:py-2.5 max-md:text-[12.5px]",
+        hidden && "pointer-events-none opacity-0"
+      )}
+    >
+      <span className="relative h-[30px] w-[19px] shrink-0 rounded-[11px] border-[1.6px] border-gold max-md:hidden">
+        <i className="absolute left-1/2 top-1.5 h-1.5 w-[3px] -translate-x-1/2 rounded-sm bg-gold" />
+      </span>
+      <span>גללו למטה</span>
+      <ArrowDown className="h-4 w-4" aria-hidden />
+    </button>
+  );
+}
+
+function MenuOverlay({ open, page, onGoto }: { open: boolean; page: number; onGoto: (n: number) => void }) {
+  return (
+    <nav
+      id="site-menu"
+      aria-label="תפריט עמודים"
+      {...(!open && { inert: true })}
+      className={cn(
+        "fixed inset-0 z-[84] flex items-center px-[var(--gut)] backdrop-blur-2xl transition-[opacity,visibility] duration-500 ease-cinematic",
+        "bg-[linear-gradient(180deg,hsl(var(--stage)/0.955),hsl(var(--stage)/0.99))]",
+        open ? "visible opacity-100" : "invisible opacity-0"
+      )}
+      style={{ paddingBlock: "calc(var(--frame) + 104px)" }}
+    >
+      <div className="mx-auto w-full max-w-[1280px]">
+        <p className="flex items-center gap-3.5 text-[12.5px] tracking-[0.32em] text-gold-hi">
+          עמודי האתר
+          <span className="h-px max-w-[70px] flex-1 bg-gold/20" />
+        </p>
+        <ol className="mt-[clamp(22px,3vw,38px)] border-t border-foreground/10">
+          {MENU.map((m, i) => (
+            <li
+              key={m.p}
+              className={cn(
+                "border-b border-foreground/10 transition-[opacity,transform] duration-700 ease-cinematic",
+                open ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0"
+              )}
+              style={{ transitionDelay: open ? `${i * 60 + 100}ms` : "0ms" }}
+            >
+              <button
+                onClick={() => onGoto(m.p)}
+                className="group flex w-full items-baseline gap-[clamp(16px,2.6vw,34px)] px-1 py-[clamp(13px,1.7vw,21px)] text-start text-foreground transition-[color,padding] duration-500 ease-cinematic hover:text-gold hover:ps-[22px]"
+              >
+                <span className="min-w-8 shrink-0 font-display text-xs font-bold tracking-[0.26em] text-gold max-md:min-w-[26px] max-md:text-[11px]" dir="ltr">
+                  {pad(m.p)}
+                </span>
+                <span className={cn("font-display text-[clamp(26px,4.4vw,54px)] font-bold leading-[1.1] tracking-[-0.02em]", page === m.p && "text-gold")}>
+                  {m.name}
+                </span>
+                <span className="ms-auto text-[12.5px] tracking-[0.1em] text-ink-3 max-md:hidden">{m.note}</span>
+              </button>
+            </li>
+          ))}
+        </ol>
+        <div className="mt-[clamp(26px,3.4vw,44px)] flex flex-wrap gap-x-[30px] gap-y-3.5">
+          <a href={`mailto:${CONTACT_EMAIL}`} dir="ltr" className="border-b border-gold/20 pb-1.5 text-sm tracking-[0.06em] text-ink-2 transition-colors hover:border-gold hover:text-gold">
+            {CONTACT_EMAIL}
+          </a>
+          <a href={WHATSAPP} target="_blank" rel="noopener" className="border-b border-gold/20 pb-1.5 text-sm tracking-[0.06em] text-ink-2 transition-colors hover:border-gold hover:text-gold">
+            וואטסאפ
+          </a>
+        </div>
+      </div>
+    </nav>
+  );
+}
+
+/* ========================== כרטיס פרויקט ========================== */
+
+function ProjectCard({ p, i, compact }: { p: (typeof PROJECTS)[number]; i: number; compact: boolean }) {
+  const ref = useRef<HTMLAnchorElement>(null);
+  const fine = useFinePointer();
+  const calm = useReducedMotion();
+  const [tilting, setTilting] = useState(false);
+
+  const onMove = (e: React.PointerEvent) => {
+    if (!fine || calm || !ref.current) return;
+    const r = ref.current.getBoundingClientRect();
+    const px = (e.clientX - r.left) / r.width;
+    const py = (e.clientY - r.top) / r.height;
+    ref.current.style.setProperty("--mx", `${px * 100}%`);
+    ref.current.style.setProperty("--my", `${py * 100}%`);
+    ref.current.style.transform = `translateY(-16px) perspective(900px) rotateX(${(0.5 - py) * 14}deg) rotateY(${(px - 0.5) * 14}deg)`;
+  };
+  const onLeave = () => {
+    setTilting(false);
+    const el = ref.current;
+    if (!el) return;
+    el.style.transform = "";
+    el.style.removeProperty("--mx");
+    el.style.removeProperty("--my");
+  };
+
+  return (
+    <article
+      className={cn("group relative", !compact && i === 1 && "md:mt-[clamp(0px,4vw,52px)]", !compact && i === 2 && "md:mt-[clamp(0px,8vw,104px)]")}
+    >
+      <a
+        ref={ref}
+        href={p.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label={`צפייה באתר ${p.title} — נפתח בלשונית חדשה`}
+        onPointerEnter={() => setTilting(true)}
+        onPointerMove={onMove}
+        onPointerLeave={onLeave}
+        className={cn(
+          "relative block overflow-hidden rounded-2xl border border-gold/20 text-inherit no-underline",
+          "shadow-[0_50px_110px_-40px_hsl(0_0%_0%/0.95),0_0_90px_-30px_hsl(var(--dim)/0.3)]",
+          "hover:border-gold/55 hover:shadow-[0_70px_130px_-40px_hsl(0_0%_0%/1),0_0_130px_-24px_hsl(var(--gold)/0.45)]",
+          tilting ? "transition-transform duration-150 ease-out" : "animate-float transition-transform duration-700 ease-cinematic motion-reduce:animate-none",
+          "[--mx:50%] [--my:42%]"
+        )}
+        style={{ animationDelay: `${i * -2.6}s` }}
+      >
+        <span className="absolute end-[18px] top-4 z-[3] rounded-full border border-gold/20 bg-stage/55 px-3 py-1.5 font-display text-xs tracking-[0.2em] text-gold-hi backdrop-blur" dir="ltr">
+          {p.no}
+        </span>
+        {/* content: יחס גובה-רוחב נעול, object-cover — לעולם לא נמתח */}
+        <img src={p.img} alt={p.alt} loading="lazy" className="aspect-[16/10] w-full object-cover transition-transform duration-[1200ms] ease-cinematic group-hover:scale-[1.06]" />
+        {/* ספוטלייט עוקב-סמן */}
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-0 z-[1] opacity-0 transition-opacity duration-400 group-hover:opacity-100"
+          style={{ background: "radial-gradient(280px circle at var(--mx) var(--my),hsl(var(--gold)/0.32),transparent 72%)" }}
+        />
+        {/* ברק חולף */}
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-0 z-[2] -translate-x-[130%] bg-[linear-gradient(115deg,transparent_42%,hsl(0_0%_100%/0.2)_50%,transparent_58%)] transition-transform duration-[1200ms] ease-cinematic group-hover:translate-x-[130%]"
+        />
+        <span aria-hidden className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,transparent_50%,hsl(var(--stage)/0.72))]" />
+        <span className="absolute bottom-4 start-[18px] z-[3] inline-flex translate-y-2.5 items-center gap-2 rounded-full bg-[linear-gradient(102deg,hsl(var(--gold-hi)),hsl(var(--gold)))] px-4 py-2.5 text-[12.5px] tracking-[0.06em] text-ink-inverse opacity-0 shadow-[0_12px_30px_-12px_hsl(0_0%_0%/0.9)] transition-[opacity,transform] duration-500 ease-cinematic group-hover:translate-y-0 group-hover:opacity-100">
+          צפייה באתר <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
+        </span>
+      </a>
+
+      {!compact && (
+        <div className="px-1 pt-7 [&_*]:[text-shadow:0_2px_22px_hsl(var(--stage)/0.92),0_1px_4px_hsl(var(--stage)/0.7)]">
+          <h3 className="font-display text-[22px] font-bold tracking-[-0.01em]">{p.title}</h3>
+          {/* קו זהב שנפתח בריחוף — המוטיב מתחת לכותרות בקאברים של הרפרנס */}
+          <span
+            aria-hidden
+            className="mt-3 block h-px w-12 origin-right bg-gradient-to-l from-gold to-transparent transition-all duration-700 ease-cinematic group-hover:w-24"
+          />
+          <p className="mt-3.5 text-[15.5px] leading-[1.85] text-ink-2">{p.body}</p>
+          <span className="mt-5 inline-flex rounded-full border border-gold/25 bg-gold/[0.06] px-4 py-2 text-[11px] tracking-[0.2em] text-gold">
+            {p.tag}
+          </span>
+        </div>
+      )}
+    </article>
+  );
+}
+
+/* ========================== הקומפוננטה הראשית ========================== */
+
+type Phase = "acts" | "gate" | "open";
+
+export default function StudioAviSite() {
+  const calm = useReducedMotion();
+  const [small, setSmall] = useState(false);
+  const [phase, setPhase] = useState<Phase>("acts");
+  const [act, setAct] = useState<1 | 2 | 3>(1);
+  const [page, setPage] = useState(1);
+  const [clip, setClip] = useState<string | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+  const [showCue, setShowCue] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [dim, setDim] = useState(0);
+  const [blink, setBlink] = useState(false);
+  const [playId, setPlayId] = useState(0);
+  const onEndRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 900px)");
+    const on = () => setSmall(mq.matches);
+    on();
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+
+  /* נעילת גלילה בזמן הפתיח / התפריט */
+  useEffect(() => {
+    const locked = phase !== "open" || menuOpen;
+    document.body.classList.toggle("is-locked", locked);
+    return () => document.body.classList.remove("is-locked");
+  }, [phase, menuOpen]);
+
+  /* העדפת תנועה מופחתת — דילוג ישיר לאתר */
+  useEffect(() => {
+    if (calm && phase === "acts") {
+      setPhase("open");
+      setClip("s6");
+      setPage(4);
+      setDim(0.58);
+    }
+  }, [calm, phase]);
+
+  const playClip = useCallback((name: string, onEnd: () => void) => {
+    setPlaying(true);
+    onEndRef.current = onEnd;
+    setPlayId((n) => n + 1);
+    setClip(name);
+  }, []);
+
+  const handleEnded = useCallback(() => {
+    setPlaying(false);
+    const fn = onEndRef.current;
+    onEndRef.current = null;
+    /* סיום שלא שייך לניגון מכוון (למשל קטע רקע) לא מזיז את האתר */
+    fn?.();
+  }, []);
+
+  /* רשת ביטחון: ניגון מכוון שלא הסתיים בזמן סביר לא ישאיר את האתר תקוע */
+  useEffect(() => {
+    if (!playing) return;
+    const t = window.setTimeout(() => {
+      const fn = onEndRef.current;
+      onEndRef.current = null;
+      setPlaying(false);
+      fn?.();
+    }, 20000);
+    return () => window.clearTimeout(t);
+  }, [playing, playId]);
+
+  /* מעבר בין המערכות */
+  const advance = useCallback(() => {
+    const a = ACTS[act - 1];
+    playClip(a.clip, () => {
+      if (act < 3) {
+        const next = (act + 1) as 2 | 3;
+        setAct(next);
+        setPage(next);
+      } else {
+        setPhase("gate");
+        setPage(4);
+        setDim(0.3);
+      }
+    });
+  }, [act, playClip]);
+
+  /* יציאה מהשער אל האתר המלא */
+  const leaveGate = useCallback(() => {
+    setPhase("acts");
+    playClip("s5", () => {
+      setPhase("open");
+      setClip("s6");
+      setShowCue(true);
+    });
+  }, [playClip]);
+
+  /* ניווט חופשי עם מצמוץ שחור */
+  const jumpTo = useCallback(
+    (n: number) => {
+      n = Math.max(1, Math.min(TOTAL_PAGES, n));
+      /* ביטול מיידי של מעבר שרץ — כדי שלא יופעל callback ישן אחרי הקפיצה */
+      onEndRef.current = null;
+      setPlaying(false);
+      setPlayId((id) => id + 1);
+      setBlink(true);
+      window.setTimeout(() => {
+        setMenuOpen(false);
+        if (n <= 3) {
+          setPhase("acts");
+          setAct(n as 1 | 2 | 3);
+          setClip(n === 1 ? null : ACTS[n - 2].clip);
+          setPlaying(false);
+          setDim(0);
+          setShowCue(false);
+        } else {
+          setPhase("open");
+          setClip("s6");
+          window.requestAnimationFrame(() => {
+            const el = document.getElementById(MENU[n - 1].name === "פרויקטים" ? "projects" : SECTION_IDS[n] ?? "projects");
+            if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 96, behavior: "auto" });
+          });
+        }
+        setPage(n);
+        window.setTimeout(() => setBlink(false), 16);
+      }, 150);
+    },
+    []
+  );
+
+  /* גלילה: מונה עמודים, פס התקדמות, עמעום */
+  useEffect(() => {
+    if (phase !== "open") return;
+    const onScroll = () => {
+      const y = window.scrollY;
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      setProgress(max > 0 ? (y / max) * 100 : 0);
+      setScrolled(y > 40);
+      if (y > 60) setShowCue(false);
+      setDim(Math.max(calm ? 0.58 : 0, Math.min(0.84, (y / (window.innerHeight * 0.75)) * 0.84)));
+
+      const mid = window.innerHeight / 2;
+      let best = 4;
+      let bestDist = Infinity;
+      for (const [n, id] of Object.entries(SECTION_IDS)) {
+        const el = document.getElementById(id);
+        if (!el) continue;
+        const r = el.getBoundingClientRect();
+        if (r.top <= mid && r.bottom >= mid) {
+          best = +n;
+          break;
+        }
+        const d = r.top > mid ? r.top - mid : mid - r.bottom;
+        if (d < bestDist) {
+          bestDist = d;
+          best = +n;
+        }
+      }
+      setPage(best);
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [phase, calm]);
+
+  const activeAct = ACTS[act - 1];
+
+  return (
+    <div dir="rtl" className="relative min-h-[100dvh] bg-background text-foreground">
+      <Stage clip={clip} playId={playId} loop={clip === "s6"} onEnded={handleEnded} dim={dim} small={small} />
+
+      {/* מצמוץ מעבר */}
+      <div
+        aria-hidden
+        className={cn("pointer-events-none fixed inset-0 z-[200] bg-black", blink ? "opacity-100 duration-[130ms]" : "opacity-0 duration-[160ms]")}
+      />
+
+      <CineFrame page={page} progress={progress} />
+      <TopRail
+        scrolled={scrolled}
+        showSkip={phase !== "open"}
+        showRestart={phase === "open" && page >= 5}
+        menuOpen={menuOpen}
+        onSkip={() => jumpTo(4)}
+        onRestart={() => jumpTo(1)}
+        onMenu={() => setMenuOpen((v) => !v)}
+        onLogo={() => jumpTo(1)}
+      />
+      <PageRail page={page} onGoto={jumpTo} hidden={menuOpen} hideOnMobile={page === 4} />
+      <WhatsAppButton hidden={menuOpen} />
+      <ScrollCue show={showCue && phase === "open"} onCue={() => window.scrollTo({ top: window.scrollY + window.innerHeight * 0.9, behavior: "smooth" })} hidden={menuOpen} />
+      <MenuOverlay open={menuOpen} page={page} onGoto={jumpTo} />
+
+      {/* ====== המערכות (1–3) ====== */}
+      {phase === "acts" && (
+        <div className="pointer-events-none fixed inset-0 z-30">
+          <section
+            key={act}
+            className="absolute inset-0 grid content-end justify-items-start px-[var(--gut)] pb-[clamp(124px,16vh,172px)] max-md:content-start max-md:justify-items-center max-md:pt-[clamp(96px,18vh,132px)] max-md:pb-[clamp(190px,28vh,240px)]"
+          >
+            {/* צומצם במכוון: רוחב 560px במקום 720 וטיפוגרפיה קטנה יותר,
+                כדי שהווידאו יישאר החלק הדומיננטי במסך */}
+            <div
+              className={cn(
+                "pointer-events-auto max-w-[min(560px,58vw)] transition-opacity duration-500 max-lg:max-w-full max-md:text-center",
+                playing && "pointer-events-none opacity-0"
+              )}
+              aria-hidden={playing}
+            >
+              {activeAct.eyebrow && (
+                <p className="mb-4 flex items-center gap-3.5 text-[11.5px] tracking-[0.32em] text-gold-hi [text-shadow:0_2px_12px_hsl(0_0%_0%/0.9)] max-md:justify-center">
+                  {activeAct.eyebrow}
+                  <span className="h-px max-w-[56px] flex-1 bg-gold/25" />
+                </p>
+              )}
+              <h1
+                className={cn(
+                  "animate-rise-in font-display font-bold leading-[1.04] tracking-[-0.015em] [text-wrap:balance] motion-reduce:animate-none max-md:text-center",
+                  act === 1 ? "text-[clamp(32px,4.9vw,64px)]" : "text-[clamp(28px,3.9vw,52px)]"
+                )}
+                style={{ animationDelay: "0.25s", opacity: calm ? 1 : undefined }}
+              >
+                <span className="block overflow-hidden py-[0.14em] -my-[0.14em]">
+                  <span className="block [text-shadow:0_4px_28px_hsl(0_0%_0%/0.95),0_2px_8px_hsl(0_0%_0%/0.85)]">{activeAct.lines[0]}</span>
+                </span>
+                <span className="block overflow-hidden py-[0.14em] -my-[0.14em]">
+                  <span className="block bg-[linear-gradient(96deg,hsl(var(--gold-dp))_4%,hsl(var(--gold-hi))_42%,hsl(var(--gold))_78%)] bg-clip-text text-transparent [filter:drop-shadow(0_3px_16px_hsl(0_0%_0%/0.85))_drop-shadow(0_2px_24px_hsl(var(--gold)/0.3))]">
+                    {activeAct.lines[1]}
+                  </span>
+                </span>
+              </h1>
+
+              <p
+                className="mt-5 max-w-[42ch] animate-rise-in text-[clamp(14px,1.1vw,16px)] leading-[1.85] text-ink-2 [text-shadow:0_2px_14px_hsl(0_0%_0%/0.95),0_1px_4px_hsl(0_0%_0%/0.8)] motion-reduce:animate-none max-md:mx-auto max-md:mt-4 max-md:text-center"
+                style={{ animationDelay: "0.5s" }}
+              >
+                {activeAct.lede}
+              </p>
+
+              <div className="mt-11 flex animate-rise-in flex-wrap items-center gap-x-[26px] gap-y-[18px] motion-reduce:animate-none max-md:mt-8 max-md:justify-center max-md:gap-3.5" style={{ animationDelay: "0.8s" }}>
+                <CineButton onClick={advance} loading={playing} disabled={playing}>
+                  {activeAct.cta}
+                </CineButton>
+                {activeAct.hint && <span className="text-[12.5px] tracking-[0.04em] text-ink-3 max-md:hidden">{activeAct.hint}</span>}
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {/* ====== שער הפרויקטים ====== */}
+      {phase === "gate" && (
+        <div className="relative z-10 grid min-h-[100dvh] content-center px-[var(--gut)] py-[clamp(74px,9vh,104px)] max-md:pb-[132px]">
+          <div className="mx-auto mb-[clamp(24px,3vw,36px)] grid max-w-[720px] justify-items-center gap-5 text-center">
+            <p className="flex items-center gap-3.5 text-[12.5px] tracking-[0.32em] text-gold-hi">
+              <span className="h-px w-[60px] bg-gold/20" />
+              הפורטפוליו
+              <span className="h-px w-[60px] bg-gold/20" />
+            </p>
+            <h2 className="font-display text-[clamp(32px,4.8vw,64px)] font-bold leading-[1.08] tracking-[-0.02em]">פרויקטים אחרונים</h2>
+          </div>
+          <div className="mx-auto grid w-full max-w-[1080px] grid-cols-3 items-start gap-[clamp(20px,3vw,44px)] max-md:grid-cols-1 max-md:gap-8">
+            {PROJECTS.map((p, i) => (
+              <ProjectCard key={p.no} p={p} i={i} compact />
+            ))}
+          </div>
+          <div
+            className={cn(
+              "mt-[clamp(28px,3.4vw,44px)] flex flex-col items-center gap-5 text-center transition-opacity duration-500 max-md:fixed max-md:inset-x-[calc(var(--frame)+20px)] max-md:bottom-[calc(var(--frame)+16px)] max-md:z-[60] max-md:mt-0",
+              playing && "pointer-events-none opacity-0"
+            )}
+          >
+            <p className="text-base text-ink-2 max-md:hidden">זה מה שיצא מכאן. עכשיו נראה לכם איך זה נבנה.</p>
+            <CineButton onClick={leaveGate} loading={playing} disabled={playing} className="min-w-[280px] max-md:min-w-0">
+              המשיכו הלאה
+            </CineButton>
+          </div>
+        </div>
+      )}
+
+      {/* ====== האתר המלא (4–9) ====== */}
+      {phase === "open" && <Story onRestart={() => jumpTo(1)} />}
+    </div>
+  );
+}
+
+const SECTION_IDS: Record<number, string> = {
+  4: "projects",
+  5: "about",
+  6: "services",
+  7: "process",
+  8: "faq",
+  9: "contact",
+};
+
+/* ========================== סקשנים ========================== */
+
+/** עוטף את עמודי 4–9 ומריץ עליהם חשיפה אחת מרוכזת ב-GSAP */
+function Story({ onRestart }: { onRestart: () => void }) {
+  const scope = useRef<HTMLElement>(null);
+  useGsapReveal(scope);
+  return (
+    <main ref={scope} className="relative z-10 max-md:pb-[150px]">
+      <Projects />
+      <About />
+      <Services />
+      <Process />
+      <Faq />
+      <Contact />
+      <SiteFooter onRestart={onRestart} />
+    </main>
+  );
+}
+
+const secCls =
+  "relative isolate mx-auto max-w-[1280px] px-[var(--gut)] py-[clamp(88px,13vh,164px)]";
+
+/** סקרים מקומי — מבטיח קריאוּת מעל כל פריים וידאו, בהיר ככל שיהיה */
+function SecScrim({ wide }: { wide?: boolean }) {
+  return (
+    <div
+      aria-hidden
+      className={cn("pointer-events-none absolute inset-x-0 -z-10", wide ? "-inset-y-[30%]" : "-inset-y-[4%]")}
+      style={{
+        background:
+          "radial-gradient(82% 68% at 60% 45%,hsl(var(--stage)/0.95) 0%,hsl(var(--stage)/0.86) 34%,hsl(var(--stage)/0.5) 62%,hsl(var(--stage)/0.14) 82%,transparent 92%)",
+      }}
+    />
+  );
+}
+
+const shadowText = "[&_*]:[text-shadow:0_2px_22px_hsl(var(--stage)/0.92),0_1px_4px_hsl(var(--stage)/0.7)]";
+
+/** כותרת סקשן — eyebrow, מפריד מעוטר, כותרת ותת-כותרת */
+function SecHead({
+  eyebrow,
+  title,
+  sub,
+  center,
+}: {
+  eyebrow: string;
+  title: React.ReactNode;
+  sub?: React.ReactNode;
+  center?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        "mb-[clamp(48px,6vw,78px)] grid max-w-[760px] gap-5",
+        center && "mx-auto justify-items-center text-center",
+        shadowText
+      )}
+    >
+      <p
+        data-rv="0"
+        className={cn("flex items-center gap-3.5 text-[11.5px] tracking-[0.34em] text-gold-hi", center && "justify-center")}
+      >
+        {eyebrow}
+      </p>
+      <h2
+        data-rv="60"
+        className="font-display text-[clamp(30px,4.4vw,58px)] font-bold leading-[1.1] tracking-[-0.02em] [text-wrap:balance]"
+      >
+        {title}
+      </h2>
+      <span data-rv="120" className={cn("mt-1 block", center ? "" : "self-start")}>
+        <Ornament />
+      </span>
+      {sub && (
+        <p data-rv="180" className="mt-1 max-w-[58ch] text-[16px] leading-[1.95] text-ink-2">
+          {sub}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function Projects() {
+  return (
+    <section id="projects" className={secCls}>
+      <SecScrim />
+      <SecHead
+        center
+        eyebrow="הפורטפוליו"
+        title="פרויקטים אחרונים"
+        sub="שלושה מותגים שנכנסו פנימה ויצאו אחרת לגמרי. כל פרויקט נבנה בהתאמה אישית מלאה — מהרעיון הראשון ועד השורה האחרונה של הקוד, כדי להזיז מדדים, לא רק להיראות טוב."
+      />
+      <div className="grid grid-cols-3 items-start gap-[clamp(20px,3vw,44px)] max-md:grid-cols-1 max-md:gap-14">
+        {PROJECTS.map((p, i) => (
+          <div key={p.no} data-rv={i * 140}>
+            <ProjectCard p={p} i={i} compact={false} />
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function About() {
+  return (
+    <section id="about" className={secCls}>
+      <SecScrim />
+      <div className="grid grid-cols-[1.15fr_0.85fr] items-start gap-[clamp(32px,5vw,80px)] max-lg:grid-cols-1 max-lg:gap-14">
+        <div className={shadowText}>
+          <p className="flex items-center gap-3.5 text-[12.5px] tracking-[0.32em] text-gold-hi">
+            אודות
+            <span className="h-px max-w-[70px] flex-1 bg-gold/20" />
+          </p>
+          <h2 data-rv="60" className="mt-1.5 font-display text-[clamp(30px,4.4vw,58px)] font-bold leading-[1.1] tracking-[-0.02em]">
+            סטודיו של איש אחד.
+            <br />
+            <span className="bg-[linear-gradient(96deg,hsl(var(--gold-dp))_4%,hsl(var(--gold-hi))_42%,hsl(var(--gold))_78%)] bg-clip-text text-transparent">
+              וזו בדיוק הנקודה.
+            </span>
+          </h2>
+          <span data-rv="110" className="mt-5 block">
+            <Ornament w="w-12" />
+          </span>
+          <p data-rv="160" className="mt-6 max-w-[48ch] text-[16px] leading-[1.95] text-ink-2">
+            קוראים לי אבי, ואני מעצב ובונה אתרים כבר יותר מעשור — כולל עולמות תלת מימד ואנימציית תנועה. אין כאן מנהל
+            פרויקטים שמעביר הודעות הלאה, ואין צוות שמתחלף באמצע. מי שמדבר איתכם בשיחה הראשונה הוא גם מי שכותב את
+            השורה האחרונה של הקוד.
+          </p>
+          <p data-rv="220" className="mt-6 max-w-[48ch] text-[16px] leading-[1.95] text-ink-2">
+            אני לוקח מספר מצומצם של פרויקטים בכל רבעון, כי אתר שנראה אחרת מכולם לא נולד מתבנית — הוא נולד מזמן.{" "}
+            <strong className="font-bold text-foreground">עיצוב, קוד, תלת מימד וביצועים</strong> יושבים אצלי באותו ראש, וזה מה שמאפשר
+            לדברים להתחבר.
+          </p>
+          <ul data-rv="280" className="mt-9 grid gap-[18px]">
+            {["עשור בעיצוב, פיתוח ותלת מימד לאתרים", "אדם אחד מקצה לקצה — בלי תיווך", "קוד שנכתב ידנית, בלי בילדרים"].map((t) => (
+              <li key={t} className="flex items-center gap-[15px] text-[15.5px] text-ink-2">
+                <i className="h-1.5 w-1.5 shrink-0 rotate-45 bg-gold shadow-[0_0_14px_hsl(var(--gold))]" />
+                {t}
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <ul className="grid gap-3">
+          {SKILLS.map((s, i) => (
+            <li key={s.b} data-rv={i * 90}>
+              <GlowCard accent={s.accent ?? "gold"} bloom={false} innerClassName="grid gap-2 p-[clamp(20px,2.2vw,26px)]">
+                <b className={cn("font-display text-[17px] font-bold", s.accent === "dim" ? "text-dim" : "text-gold")}>{s.b}</b>
+                <span className="text-[14.5px] leading-[1.8] text-ink-2">{s.s}</span>
+              </GlowCard>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  );
+}
+
+function Services() {
+  return (
+    <section id="services" className={secCls}>
+      <SecScrim />
+      <SecHead
+        eyebrow="מה אני בונה"
+        title={
+          <>
+            חמש דרכים לצאת
+            <br />
+            מהעולם הזה
+          </>
+        }
+      />
+      <div className="grid grid-cols-3 gap-4 max-lg:grid-cols-2 max-md:grid-cols-1">
+        {SERVICES.map((s, i) => {
+          const Icon = SERVICE_ICONS[i];
+          return (
+            <div
+              key={s.num}
+              data-rv={i * 110}
+              className={cn(i === 3 && "lg:col-span-2 max-lg:col-span-1")}
+            >
+              <GlowCard
+                accent={s.accent ?? "gold"}
+                className="h-full"
+                innerClassName="flex h-full flex-col p-[clamp(26px,2.8vw,38px)]"
+              >
+                {/* אייקון בתוך ריבוע מעוגל עם זוהר — כמו כרטיסי השירות ברפרנס */}
+                <span
+                  className={cn(
+                    "mb-6 inline-flex h-12 w-12 items-center justify-center rounded-xl border transition-[transform,box-shadow] duration-500 ease-cinematic group-hover/card:-translate-y-0.5",
+                    s.accent === "dim"
+                      ? "border-dim/30 bg-dim/[0.07] text-dim group-hover/card:shadow-[0_0_26px_hsl(var(--dim)/0.35)]"
+                      : "border-gold/30 bg-gold/[0.07] text-gold group-hover/card:shadow-[0_0_26px_hsl(var(--gold)/0.35)]"
+                  )}
+                >
+                  <Icon className="h-5 w-5" strokeWidth={1.5} aria-hidden />
+                </span>
+                <span
+                  dir="ltr"
+                  className={cn("font-display text-[11px] tracking-[0.3em]", s.accent === "dim" ? "text-dim/70" : "text-gold/70")}
+                >
+                  {s.num}
+                </span>
+                <h3 className="mt-2.5 font-display text-[22px] font-bold leading-tight tracking-[-0.01em]">{s.h}</h3>
+                <p className="mt-3.5 text-[15px] leading-[1.85] text-ink-2">{s.p}</p>
+              </GlowCard>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function Process() {
+  const trackRef = useRef<HTMLDivElement>(null);
+  const lineRef = useRef<HTMLSpanElement>(null);
+
+  /* קו הזמן נמשך עם הגלילה (scrub) — התנועה שמחברת בין השלבים */
+  useLayoutEffect(() => {
+    const track = trackRef.current;
+    const line = lineRef.current;
+    if (!track || !line) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      gsap.set(line, { scaleX: 1 });
+      return;
+    }
+    const ctx = gsap.context(() => {
+      gsap.fromTo(
+        line,
+        { scaleX: 0 },
+        {
+          scaleX: 1,
+          ease: "none",
+          scrollTrigger: { trigger: track, start: "top 80%", end: "bottom 65%", scrub: 0.6 },
+        }
+      );
+    }, track);
+    return () => ctx.revert();
+  }, []);
+
+  return (
+    <section id="process" className={secCls}>
+      <SecScrim />
+      <SecHead
+        center
+        eyebrow="איך זה עובד"
+        title={
+          <>
+            מהשיחה הראשונה
+            <br />
+            ועד השיגור
+          </>
+        }
+      />
+
+      <div ref={trackRef} className="relative">
+        {/* מסילת קו הזמן — נסתרת במובייל שבו הכרטיסים נערמים */}
+        <div aria-hidden className="absolute inset-x-0 top-[42px] h-px bg-foreground/10 max-md:hidden">
+          <span
+            ref={lineRef}
+            className="block h-full origin-right bg-gradient-to-l from-gold via-gold-hi to-gold/30"
+            style={{ boxShadow: "0 0 14px hsl(var(--gold)/0.7)" }}
+          />
+        </div>
+
+        <ol className="grid grid-cols-4 gap-[clamp(14px,1.8vw,26px)] max-lg:grid-cols-2 max-md:grid-cols-1 max-md:gap-5">
+          {STEPS.map((s, i) => {
+            const Icon = STEP_ICONS[i];
+            return (
+              <li key={s.n} data-rv={i * 120} className="relative">
+                {/* צומת על קו הזמן */}
+                <span
+                  aria-hidden
+                  className="absolute end-[calc(50%-5px)] top-[37px] z-[2] h-2.5 w-2.5 rotate-45 bg-gold shadow-[0_0_16px_hsl(var(--gold))] max-md:hidden"
+                />
+                {/* ריחוף עדין ומתמשך, כל כרטיס בפאזה אחרת */}
+                <div
+                  className="animate-float-soft motion-reduce:animate-none"
+                  style={{ animationDelay: `${i * -1.9}s` }}
+                >
+                  <GlowCard className="mt-[76px] max-md:mt-0" innerClassName="p-[clamp(22px,2.4vw,30px)]">
+                    <div className="flex items-center justify-between">
+                      <span
+                        className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-gold/30 bg-gold/[0.07] text-gold transition-[box-shadow,transform] duration-500 ease-cinematic group-hover/card:-translate-y-0.5 group-hover/card:shadow-[0_0_26px_hsl(var(--gold)/0.4)]"
+                      >
+                        <Icon className="h-[18px] w-[18px]" strokeWidth={1.5} aria-hidden />
+                      </span>
+                      <span
+                        dir="ltr"
+                        className="bg-[linear-gradient(180deg,hsl(var(--gold-hi)),hsl(var(--gold-dp)))] bg-clip-text font-display text-[30px] font-bold leading-none text-transparent opacity-45 transition-opacity duration-500 group-hover/card:opacity-90"
+                      >
+                        {s.n}
+                      </span>
+                    </div>
+                    <h3 className="mt-5 font-display text-[19px] font-bold">{s.h}</h3>
+                    <p className="mt-2.5 text-[14.5px] leading-[1.85] text-ink-2">{s.p}</p>
+                  </GlowCard>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      </div>
+    </section>
+  );
+}
+
+function Faq() {
+  return (
+    <section id="faq" className={secCls}>
+      <SecScrim />
+      <SecHead
+        eyebrow="לפני שנדבר"
+        title={
+          <>
+            שאלות שנשאלות
+            <br />
+            כמעט בכל שיחה
+          </>
+        }
+      />
+      <div className="mx-auto grid max-w-[920px] gap-3">
+        {FAQ.map((f, i) => (
+          <div key={f.q} data-rv={i * 90}>
+            <GlowCard bloom={false} className="hover:-translate-y-0.5" innerClassName="">
+              <details className="group/faq transition-colors duration-500 open:bg-gold/[0.04]">
+                <summary
+                  className={cn(
+                    "flex cursor-pointer list-none items-center gap-[18px] px-[clamp(20px,2.4vw,28px)] py-[clamp(18px,2vw,24px)]",
+                    "font-display text-[clamp(16px,1.55vw,19px)] font-bold tracking-[-0.01em] transition-[color,padding] duration-300 ease-cinematic",
+                    "hover:ps-2 hover:text-gold [&::-webkit-details-marker]:hidden",
+                    shadowText
+                  )}
+                >
+                  {f.q}
+                  <span className="ms-auto inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-gold/25 bg-gold/[0.06] text-gold transition-[transform,box-shadow] duration-400 ease-cinematic group-open/faq:rotate-45 group-open/faq:shadow-[0_0_18px_hsl(var(--gold)/0.4)]">
+                    <Plus aria-hidden className="h-3.5 w-3.5" />
+                  </span>
+                </summary>
+                <div className="px-[clamp(20px,2.4vw,28px)] pb-[clamp(20px,2.2vw,26px)]">
+                  <p className="max-w-[64ch] text-[15px] leading-[1.9] text-ink-2">{f.a}</p>
+                </div>
+              </details>
+            </GlowCard>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function Contact() {
+  const [sent, setSent] = useState(false);
+  const [name, setName] = useState("");
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const submit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    const d = Object.fromEntries(fd.entries()) as Record<string, string>;
+    const err: Record<string, string> = {};
+    if ((d.name ?? "").trim().length < 2) err.name = "איך קוראים לכם?";
+    if (!/^[0-9+\-\s()]{9,15}$/.test((d.phone ?? "").trim())) err.phone = "מספר טלפון לא תקין";
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test((d.email ?? "").trim())) err.email = "כתובת אימייל לא תקינה";
+    if (!d.type) err.type = "בחרו סוג פרויקט";
+    setErrors(err);
+    if (Object.keys(err).length) return;
+
+    // TODO: להחליף בקריאה לשירות טפסים אמיתי (Formspree / Supabase edge function)
+    const body = `שם: ${d.name}\nטלפון: ${d.phone}\nאימייל: ${d.email}\nסוג פרויקט: ${d.type}\nתקציב: ${d.budget || "לא צוין"}\n\n${d.message || ""}`;
+    window.location.href = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent("פנייה חדשה מהאתר · " + d.name)}&body=${encodeURIComponent(body)}`;
+    setName((d.name ?? "").trim().split(" ")[0]);
+    setSent(true);
+  };
+
+  const field = "w-full rounded-xl border border-foreground/15 bg-foreground/[0.04] px-4 py-[15px] text-[15.5px] outline-none transition-[border-color,background,box-shadow] focus:border-gold focus:bg-gold/[0.08] focus:shadow-[0_0_0_4px_hsl(var(--gold)/0.12)]";
+  const label = "mb-2.5 block text-xs tracking-[0.14em] text-ink-3";
+
+  return (
+    <section id="contact" className={cn(secCls, "max-w-[1340px] py-[clamp(120px,18vh,210px)]")}>
+      <SecScrim />
+      <div className="grid grid-cols-[1fr_1.02fr] items-center gap-[clamp(32px,5vw,86px)] max-lg:grid-cols-1 max-lg:gap-14">
+        <div className={cn("relative", shadowText)}>
+          <p className="flex items-center gap-3.5 text-[12.5px] tracking-[0.32em] text-gold-hi">
+            הצעד האחרון
+            <span className="h-px max-w-[70px] flex-1 bg-gold/20" />
+          </p>
+          <h2 data-rv="60" className="mt-1.5 font-display text-[clamp(30px,4.4vw,58px)] font-bold leading-[1.1] tracking-[-0.02em]">
+            אפשר להמשיך לגלול.
+            <br />
+            <span className="bg-[linear-gradient(96deg,hsl(var(--gold-dp))_4%,hsl(var(--gold-hi))_42%,hsl(var(--gold))_78%)] bg-clip-text text-transparent">
+              או פשוט לקפוץ.
+            </span>
+          </h2>
+          <span data-rv="110" className="mt-5 block">
+            <Ornament w="w-12" />
+          </span>
+          <p data-rv="160" className="mt-6 max-w-[44ch] text-[16px] leading-[1.95] text-ink-2">
+            כל פרויקט מתחיל בשיחה אחת קצרה — בלי התחייבות ובלי מצגות מכירה. נשמע אתכם, נגיד אם זה מתאים, ותצאו עם
+            כיוון ברור גם אם לא נעבוד יחד.
+          </p>
+          <ul data-rv="220" className="mt-9 grid gap-[18px]">
+            {["חזרה תוך 24 שעות, מבן אדם אמיתי", "הצעת מחיר מפורטת ללא עלות", "מספר פרויקטים מוגבל בכל רבעון"].map((t) => (
+              <li key={t} className="flex items-center gap-[15px] text-[15.5px] text-ink-2">
+                <i className="h-1.5 w-1.5 shrink-0 rotate-45 bg-gold shadow-[0_0_14px_hsl(var(--gold))]" />
+                {t}
+              </li>
+            ))}
+          </ul>
+          <div data-rv="280" className="mt-11 flex flex-wrap gap-4">
+            <a href={WHATSAPP} target="_blank" rel="noopener" className="contents">
+              <CineButton variant="ghost">וואטסאפ</CineButton>
+            </a>
+            <a href={`mailto:${CONTACT_EMAIL}`} className="contents">
+              <CineButton variant="ghost">מייל ישיר</CineButton>
+            </a>
+          </div>
+        </div>
+
+        <div data-rv="120" className="relative">
+          <div
+            className={cn(
+              "relative rounded-3xl p-px transition-[opacity,transform] duration-500",
+              "bg-[linear-gradient(180deg,hsl(var(--gold)/0.45),hsl(var(--gold)/0.08)_40%,transparent_75%)]",
+              "shadow-[0_60px_140px_-50px_hsl(0_0%_0%/1),0_0_110px_-55px_hsl(var(--gold)/0.5)]",
+              sent && "pointer-events-none scale-[0.97] opacity-0"
+            )}
+          >
+          <div
+            className={cn(
+              "relative overflow-hidden rounded-3xl p-[clamp(28px,3.4vw,44px)] backdrop-blur-3xl",
+              "bg-[linear-gradient(180deg,hsl(225_25%_6%/0.94),hsl(225_29%_3%/0.96))]"
+            )}
+          >
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-x-[20%] -bottom-12 h-24 rounded-[50%] bg-gold/40 opacity-40 blur-3xl"
+            />
+            <h3 className="font-display text-[clamp(26px,2.8vw,34px)] font-bold tracking-[-0.02em]">השאירו פרטים</h3>
+            <p className="mt-3 text-[15px] text-ink-3">ואחזור אליכם עם רעיון ראשון לפרויקט</p>
+
+            <form onSubmit={submit} noValidate>
+              <div className="mt-[22px]">
+                <label className={label} htmlFor="f-name">
+                  שם מלא <b className="font-normal text-gold">*</b>
+                </label>
+                <input id="f-name" name="name" type="text" autoComplete="name" placeholder="ישראל ישראלי" className={cn(field, errors.name && "border-destructive bg-destructive/10")} />
+                {errors.name && <em className="mt-2 block text-[12.5px] not-italic text-destructive-foreground">{errors.name}</em>}
+              </div>
+
+              <div className="grid grid-cols-2 gap-[18px] max-md:grid-cols-1 max-md:gap-0">
+                <div className="mt-[22px]">
+                  <label className={label} htmlFor="f-phone">
+                    טלפון <b className="font-normal text-gold">*</b>
+                  </label>
+                  <input id="f-phone" name="phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="050-0000000" className={cn(field, errors.phone && "border-destructive bg-destructive/10")} />
+                  {errors.phone && <em className="mt-2 block text-[12.5px] not-italic text-destructive-foreground">{errors.phone}</em>}
+                </div>
+                <div className="mt-[22px]">
+                  <label className={label} htmlFor="f-email">
+                    אימייל <b className="font-normal text-gold">*</b>
+                  </label>
+                  <input id="f-email" name="email" type="email" autoComplete="email" placeholder="name@mail.com" dir="ltr" className={cn(field, errors.email && "border-destructive bg-destructive/10")} />
+                  {errors.email && <em className="mt-2 block text-[12.5px] not-italic text-destructive-foreground">{errors.email}</em>}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-[18px] max-md:grid-cols-1 max-md:gap-0">
+                <div className="mt-[22px]">
+                  <label className={label} htmlFor="f-type">
+                    סוג הפרויקט <b className="font-normal text-gold">*</b>
+                  </label>
+                  <select id="f-type" name="type" className={cn(field, "cursor-pointer appearance-none ps-11", errors.type && "border-destructive bg-destructive/10")}
+                    style={{
+                      backgroundImage:
+                        "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23E8C48A' stroke-width='1.6'/%3E%3C/svg%3E\")",
+                      backgroundRepeat: "no-repeat",
+                      backgroundPosition: "left 17px center",
+                    }}
+                  >
+                    <option value="">בחרו אפשרות</option>
+                    {["אתר תדמית קולנועי", "אתר / חוויית תלת מימד", "דף נחיתה", "חנות אונליין", "מערכת / אפליקציית ווב", "מיתוג דיגיטלי מלא", "עדיין לא בטוח"].map((o) => (
+                      <option key={o} className="bg-card text-foreground">
+                        {o}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.type && <em className="mt-2 block text-[12.5px] not-italic text-destructive-foreground">{errors.type}</em>}
+                </div>
+                <div className="mt-[22px]">
+                  <label className={label} htmlFor="f-budget">
+                    תקציב משוער
+                  </label>
+                  <select id="f-budget" name="budget" className={cn(field, "cursor-pointer appearance-none ps-11")}
+                    style={{
+                      backgroundImage:
+                        "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23E8C48A' stroke-width='1.6'/%3E%3C/svg%3E\")",
+                      backgroundRepeat: "no-repeat",
+                      backgroundPosition: "left 17px center",
+                    }}
+                  >
+                    <option value="">לא משנה כרגע</option>
+                    {["עד 8,000 ₪", "8,000–20,000 ₪", "20,000–50,000 ₪", "50,000 ₪ ומעלה"].map((o) => (
+                      <option key={o} className="bg-card text-foreground">
+                        {o}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="mt-[22px]">
+                <label className={label} htmlFor="f-msg">
+                  כמה מילים על הפרויקט
+                </label>
+                <textarea id="f-msg" name="message" rows={3} placeholder="מה המותג, מי הקהל, ומה הייתם רוצים שיקרה באתר" className={cn(field, "resize-none leading-[1.75]")} />
+              </div>
+
+              <div className="mt-[30px]">
+                <CineButton type="submit" full loadingText="שולח···">
+                  שלחו את הטופס ונדבר
+                </CineButton>
+              </div>
+              <p className="mt-[18px] text-center text-[12.5px] text-muted-ink">הפרטים נשמרים אצלי בלבד. בלי ספאם, בלי רשימות תפוצה.</p>
+            </form>
+          </div>
+          </div>
+
+          {sent && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 rounded-3xl border border-gold/35 p-11 text-center backdrop-blur-3xl bg-[linear-gradient(180deg,hsl(225_25%_8%/0.94),hsl(225_29%_3%/0.96))]">
+              <div className="relative h-[66px] w-[66px] rounded-full border border-gold shadow-[0_0_46px_hsl(var(--gold)/0.42)]">
+                <span className="absolute left-[21px] top-[22px] h-3 w-6 -rotate-45 border-b-2 border-l-2 border-gold" />
+              </div>
+              <h3 className="font-display text-3xl font-bold">תודה, {name || "שלכם"}!</h3>
+              <p className="max-w-[34ch] text-[15.5px] leading-[1.85] text-ink-2">
+                הפרטים התקבלו. אחזור אליכם תוך 24 שעות עם כיוון ראשון לפרויקט.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SiteFooter({ onRestart }: { onRestart: () => void }) {
+  return (
+    <footer className="relative border-t border-foreground/10 bg-[hsl(225_29%_3%/0.72)] backdrop-blur-lg">
+      <div className="mx-auto grid max-w-[1280px] grid-cols-[1.4fr_1fr_1fr] gap-10 px-[var(--gut)] pb-[46px] pt-[clamp(48px,6vw,72px)] max-md:grid-cols-1 max-md:gap-8">
+        <p className={cn("font-display text-[clamp(22px,2.4vw,30px)] font-bold leading-[1.4]", shadowText)}>
+          אתרים שלא
+          <br />
+          <span className="text-gold">מהעולם הזה.</span>
+        </p>
+        <div>
+          <h4 className="mb-5 text-[11.5px] tracking-[0.24em] text-ink-3">עמודי האתר</h4>
+          <ul className="grid gap-3">
+            {MENU.slice(3).map((m) => (
+              <li key={m.p}>
+                <a href={`#${SECTION_IDS[m.p]}`} className="text-[14.5px] text-ink-2 no-underline transition-colors hover:text-gold">
+                  {m.name}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          <h4 className="mb-5 text-[11.5px] tracking-[0.24em] text-ink-3">ליצירת קשר</h4>
+          <ul className="grid gap-3">
+            <li>
+              <a href={`mailto:${CONTACT_EMAIL}`} dir="ltr" className="text-[14.5px] text-ink-2 no-underline transition-colors hover:text-gold">
+                {CONTACT_EMAIL}
+              </a>
+            </li>
+            <li>
+              <a href={WHATSAPP} target="_blank" rel="noopener" className="text-[14.5px] text-ink-2 no-underline transition-colors hover:text-gold">
+                וואטסאפ
+              </a>
+            </li>
+            <li>
+              <a href="#contact" className="text-[14.5px] text-ink-2 no-underline transition-colors hover:text-gold">
+                השארת פרטים
+              </a>
+            </li>
+          </ul>
+        </div>
+      </div>
+      <div className="mx-auto flex max-w-[1280px] flex-wrap items-center justify-between gap-4 border-t border-foreground/10 px-[var(--gut)] pb-[clamp(96px,12vh,124px)] pt-5 text-[12.5px] text-muted-ink max-md:pb-[260px]">
+        <span>© {new Date().getFullYear()} סטודיו אבי · כל הזכויות שמורות</span>
+        <button onClick={onRestart} className="inline-flex items-center gap-2 text-[12.5px] tracking-[0.04em] text-gold transition-opacity hover:opacity-75">
+          להתחיל את המסע מחדש
+          <RotateCcw className="h-3.5 w-3.5" aria-hidden />
+        </button>
+      </div>
+    </footer>
+  );
+}
