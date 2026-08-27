@@ -420,219 +420,267 @@ const CLIP_ORDER = ["s2", "s3", "s4", "s5", "s6"] as const;
 function Stage({
   clip,
   playId,
-  loop,
+  still,
   onEnded,
   dim,
 }: {
   clip: string | null;
+  /** מזהה בקשת ניגון — חייב לעלות בכל בקשה, גם אם הקטע זהה */
   playId: number;
-  loop: boolean;
-  onEnded?: () => void;
+  /** true = לא מנגן, רק מציג את הפריים האחרון (קפיצה בסרגל העמודים) */
+  still: boolean;
+  onEnded?: (() => void) | undefined;
   dim: number;
-  small: boolean;
 }) {
   const calm = useReducedMotion();
-  const src = clip ? CLIP_SOURCES[clip] : undefined;
+  const rootRef = useRef<HTMLDivElement>(null);
+  const posterRef = useRef<HTMLImageElement>(null);
+  const vids = useRef<Array<HTMLVideoElement | null>>([null, null]);
+  /** איזה נגן מוצג כרגע (-1 = אף אחד, רק הפוסטר) */
+  const activeIdx = useRef(-1);
+  const currentClip = useRef<string | null>(null);
+  const onEndRef = useRef<(() => void) | undefined>(onEnded);
+  onEndRef.current = onEnded;
+  const [mediaError, setMediaError] = useState<string | null>(null);
 
-  /* שני נגנים מתחלפים (A/B) — הקטע החדש נטען מוסתר ונחשף רק כשהוא באמת מנגן,
-     כך שהפריים הקודם נשאר על המסך ואין הבזק של הפוסטר. */
-  const [slots, setSlots] = useState<[string | undefined, string | undefined]>([src, undefined]);
-  const [active, setActive] = useState<0 | 1>(0);
-  const [started, setStarted] = useState(false);
-  const refs = useRef<Array<HTMLVideoElement | null>>([null, null]);
-  /* נעילת סיום לפי מזהה ניגון — אותו קטע יכול להתנגן שוב ולשגר onEnded שוב */
-  const endedFor = useRef<number | null>(null);
+  const show = (el: HTMLVideoElement, on: boolean) => {
+    el.style.opacity = on ? "1" : "0";
+    el.style.zIndex = on ? "2" : "1";
+  };
 
-  /* טעינה מוקדמת של הקטע הבא בסדר ההופעה */
-  const nextIdx = clip ? CLIP_ORDER.indexOf(clip as (typeof CLIP_ORDER)[number]) + 1 : 0;
-  const preloadName = CLIP_ORDER[nextIdx];
-  const preloadSrc = preloadName ? CLIP_SOURCES[preloadName] : undefined;
-
-  /* החלפת שכבה (קרוספייד) — הפריים הקודם נשאר עד סוף הדעיכה */
-  const reveal = useCallback(
-    (i: 0 | 1) => {
-      setStarted(true);
-      setActive((cur) => {
-        if (cur === i) return cur;
-        const old = cur;
-        window.setTimeout(
-          () =>
-            setSlots((s) => {
-              const n: [string | undefined, string | undefined] = [s[0], s[1]];
-              n[old] = undefined;
-              return n;
-            }),
-          calm ? 0 : 480
-        );
-        return i;
-      });
-    },
-    [calm]
-  );
-
+  /* ────────────────────────────────────────────────────────────────────
+     מנוע הניגון.
+     כל בקשה מקבלת AbortController משלה, ולכן מאזינים של בקשה קודמת
+     מנותקים לפני שהחדשה מתחילה. זה מה שמונע את הבאג שבו הנגן הישן
+     חשף את עצמו מחדש, החזיר לרגע את הקטע הקודם, ואז ניקה בטעות את
+     השכבה של הקטע החדש — ונשאר מסך שחור.
+     ──────────────────────────────────────────────────────────────────── */
   useEffect(() => {
-    if (!src) {
-      setSlots([undefined, undefined]);
-      setActive(0);
-      return;
-    }
-    if (slots[active] === src) return;
-    const idle = (active === 0 ? 1 : 0) as 0 | 1;
-    if (slots[idle] !== src) {
-      setSlots((s) => {
-        const n: [string | undefined, string | undefined] = [s[0], s[1]];
-        n[idle] = src;
-        return n;
+    const root = rootRef.current;
+    const a = vids.current[0];
+    const b = vids.current[1];
+    if (!root || !a || !b) return;
+
+    const ac = new AbortController();
+    const { signal } = ac;
+
+    /* אין קטע — חוזרים לפוסטר */
+    if (!clip) {
+      [a, b].forEach((v) => {
+        show(v, false);
+        v.pause();
+        v.loop = false;
+        v.removeAttribute("src");
+        v.load();
       });
+      activeIdx.current = -1;
+      currentClip.current = null;
+      if (posterRef.current) posterRef.current.style.opacity = "1";
+      return () => ac.abort();
     }
-    /* ביטחון: בודקים מוכנוּת שוב ושוב ומחליפים ברגע שיש פריים אמיתי.
-       רק אם עברו 6 שניות בלי מוכנוּת — מחליפים בכל מקרה כדי לא להיתקע. */
-    const start = Date.now();
-    const iv = window.setInterval(() => {
-      const v = refs.current[idle];
-      const ready = !!v && v.readyState >= 2;
-      if (ready || Date.now() - start > 6000) {
-        if (v) {
+
+    const src = CLIP_SOURCES[clip];
+    if (!src) return () => ac.abort();
+
+    const inIdx = activeIdx.current === 0 ? 1 : 0;
+    const inEl = vids.current[inIdx];
+    const outEl = activeIdx.current >= 0 ? vids.current[activeIdx.current] : null;
+    if (!inEl) return () => ac.abort();
+
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      onEndRef.current?.();
+    };
+
+    /* אותו קטע כבר מוצג — לא טורפים את המסך */
+    if (currentClip.current === clip && outEl) {
+      if (still) {
+        /* קפיצה לעמוד שכבר מוצג בזמן שהקטע רץ — עוצרים על הפריים האחרון */
+        outEl.pause();
+        outEl.loop = false;
+        const d = outEl.duration;
+        if (Number.isFinite(d) && d > 0) {
           try {
-            if (v.currentTime > 0.05) v.currentTime = 0;
+            outEl.currentTime = Math.max(0, d - 0.05);
           } catch {
             /* מתעלמים */
           }
-          const p = v.play();
-          if (p) p.catch(() => {});
         }
-        reveal(idle);
-        window.clearInterval(iv);
-      }
-    }, 120);
-
-    return () => window.clearInterval(iv);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [src]);
-
-  useEffect(() => {
-    slots.forEach((s, i) => {
-      const v = refs.current[i];
-      if (!v || !s) return;
-      /* הקטע הנכנס מתחיל תמיד מהפריים הראשון — כך אין הצגת פריים שיורי */
-      if (v.currentTime > 0.05 && i !== active) {
+      } else {
+        outEl.loop = false;
         try {
-          v.currentTime = 0;
+          outEl.currentTime = 0;
         } catch {
-          /* מתעלמים — הדפדפן עדיין לא מוכן לחיפוש */
+          /* מתעלמים */
+        }
+        outEl.addEventListener("ended", finish, { signal, once: true });
+        void outEl.play().catch(() => {});
+      }
+      return () => ac.abort();
+    }
+
+    inEl.loop = false;
+    inEl.muted = true;
+    /* הנגן שהתפנה כבר טען מראש את הקטע הבא — אם זה הנכון, אין load מחדש */
+    if (inEl.getAttribute("src") !== src) {
+      inEl.setAttribute("src", src);
+      inEl.load();
+    }
+    try {
+      if (inEl.currentTime > 0.05) inEl.currentTime = 0;
+    } catch {
+      /* מתעלמים */
+    }
+
+    let revealed = false;
+    let failTimer = 0;
+    let fadeTimer = 0;
+
+    const reveal = () => {
+      if (revealed) return;
+      revealed = true;
+      window.clearTimeout(failTimer);
+
+      show(inEl, true);
+      activeIdx.current = inIdx;
+      currentClip.current = clip;
+      if (posterRef.current) posterRef.current.style.opacity = "0";
+
+      const nextName = CLIP_ORDER[CLIP_ORDER.indexOf(clip as (typeof CLIP_ORDER)[number]) + 1];
+      const nextSrc = nextName ? CLIP_SOURCES[nextName] : undefined;
+
+      if (outEl && outEl !== inEl) {
+        fadeTimer = window.setTimeout(() => {
+          if (activeIdx.current !== inIdx) return;
+          show(outEl, false);
+          outEl.pause();
+          outEl.loop = false;
+          /* הנגן שהתפנה הופך לטוען-מראש של הקטע הבא — בלי הורדה כפולה */
+          if (nextSrc) {
+            outEl.setAttribute("src", nextSrc);
+            outEl.load();
+          } else {
+            outEl.removeAttribute("src");
+            outEl.load();
+          }
+        }, calm ? 0 : 460);
+      } else if (nextSrc) {
+        /* אין שכבה קודמת (הקטע הראשון) — טוענים מראש על הנגן הפנוי */
+        const idle = vids.current[inIdx === 0 ? 1 : 0];
+        if (idle && idle !== inEl && idle.getAttribute("src") !== nextSrc) {
+          idle.setAttribute("src", nextSrc);
+          idle.load();
         }
       }
-      if (v.paused) {
-        const p = v.play();
-        if (p) p.catch(() => {});
-      }
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slots]);
+    };
 
-  const finish = useCallback(() => {
-    if (endedFor.current === playId) return;
-    endedFor.current = playId;
-    onEnded?.();
-  }, [playId, onEnded]);
+    /* חושפים רק כשיש פריים אמיתי על המסך — לא על loadeddata */
+    const tryReveal = () => {
+      if (inEl.readyState >= 2 && inEl.currentTime > 0) reveal();
+    };
+    inEl.addEventListener("timeupdate", tryReveal, { signal });
+    inEl.addEventListener("playing", tryReveal, { signal });
+    inEl.addEventListener("seeked", tryReveal, { signal });
+
+    if (still) {
+      /* מצב "פריים אחרון": מדלגים לסוף בלי לנגן */
+      const seekEnd = () => {
+        const d = inEl.duration;
+        if (Number.isFinite(d) && d > 0) {
+          try {
+            inEl.currentTime = Math.max(0, d - 0.05);
+          } catch {
+            /* מתעלמים */
+          }
+        }
+      };
+      if (inEl.readyState >= 1) seekEnd();
+      else inEl.addEventListener("loadedmetadata", seekEnd, { signal, once: true });
+    } else {
+      inEl.addEventListener(
+        "loadeddata",
+        () => {
+          void inEl.play().catch(() => {});
+        },
+        { signal }
+      );
+      inEl.addEventListener("ended", finish, { signal, once: true });
+      void inEl.play().catch(() => {});
+    }
+
+    inEl.addEventListener(
+      "error",
+      () => {
+        const code = inEl.error ? inEl.error.code : 0;
+        const file = src.split("/").pop() ?? src;
+        setMediaError(`${file} — קוד ${code}. קובץ שמקודד ב-HEVC/H.265 לא ינוגן בדפדפן.`);
+        /* לא משאירים את האתר תקוע, אבל גם לא מנקים את הפריים הקיים */
+        if (!still) window.setTimeout(finish, 400);
+      },
+      { signal }
+    );
+
+    /* רשת ביטחון: אם תוך 8 שניות אין פריים — חושפים בכל זאת.
+       זו לא בהכרח שגיאה (יכול להיות חיבור איטי), לכן רק אזהרה בקונסול. */
+    failTimer = window.setTimeout(() => {
+      if (revealed) return;
+      console.warn(`[media] ${src} לא הגיע למצב ניגון תוך 8 שניות — נחשף בכל זאת.`);
+      reveal();
+    }, 8000);
+
+    return () => {
+      ac.abort();
+      window.clearTimeout(failTimer);
+      if (fadeTimer) {
+        window.clearTimeout(fadeTimer);
+        /* מנקים את השכבה הישנה מיד, בלי לגעת ב-src — הבקשה החדשה מנהלת אותו */
+        if (outEl && outEl !== inEl && activeIdx.current === inIdx) {
+          show(outEl, false);
+          outEl.pause();
+        }
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playId, clip, still, calm]);
 
   return (
-    <div className="fixed inset-0 z-0 bg-stage">
-      {/* פוסטר פתיחה — שכבה נפרדת שנדעכת ברגע שקטע ראשון מנגן, כדי שלא תבזיק שוב */}
+    <div ref={rootRef} className="fixed inset-0 z-0 bg-stage">
+      {/* פוסטר פתיחה — נדעך ברגע שקטע ראשון מנגן, ולא מבזיק שוב */}
       <img
+        ref={posterRef}
         src={POSTER_SRC}
         alt=""
         aria-hidden
-        className={cn(
-          "absolute inset-0 h-full w-full object-cover transition-opacity duration-500 motion-reduce:transition-none",
-          started ? "opacity-0" : "opacity-100"
-        )}
+        style={{ opacity: 1 }}
+        className="absolute inset-0 h-full w-full object-cover transition-opacity duration-500 motion-reduce:transition-none"
       />
 
-      {([0, 1] as const).map((i) => {
-        const s = slots[i];
-        const isActive = active === i;
+      {([0, 1] as const).map((i) => (
+        <video
+          key={i}
+          ref={(el) => {
+            vids.current[i] = el;
+          }}
+          muted
+          playsInline
+          preload="auto"
+          aria-hidden
+          style={{ opacity: 0, zIndex: 1 }}
+          /* structural: ממלא את המסך; object-cover שומר על יחס גובה-רוחב בלי עיוות */
+          className={cn(
+            "absolute inset-0 h-full w-full object-cover transition-opacity motion-reduce:transition-none",
+            calm ? "duration-0" : "duration-[420ms]"
+          )}
+        />
+      ))}
 
-        return (
-          <video
-            key={i}
-            ref={(el) => {
-              refs.current[i] = el;
-            }}
-            src={s}
-            muted
-            playsInline
-            preload="auto"
-            loop={loop && isActive}
-            onLoadedData={(e) => {
-              /* מוודאים פריים ראשון לפני חשיפה */
-              const v = e.currentTarget;
-              if (!isActive && v.currentTime > 0.05) {
-                try {
-                  v.currentTime = 0;
-                } catch {
-                  /* מתעלמים */
-                }
-              }
-              const p = v.play();
-              if (p) p.catch(() => {});
-            }}
-            onPlaying={(e) => {
-              /* נחשף רק כשיש באמת פריים מוכן על המסך */
-              if (slots[i] && e.currentTarget.readyState >= 3) reveal(i);
-            }}
-            onCanPlayThrough={() => {
-              if (slots[i] && !isActive) reveal(i);
-            }}
-            onTimeUpdate={(e) => {
-              if (slots[i] && !isActive && e.currentTarget.currentTime > 0 && e.currentTarget.readyState >= 3) reveal(i);
-            }}
-            onEnded={() => {
-              if (!isActive || !s) return;
-              finish();
-            }}
-            onError={() => {
-              /* כשל טעינה — משאירים את הפריים הקודם על המסך (בלי הבזק)
-                 וממשיכים לחלק הבא */
-              if (!s) return;
-              finish();
-            }}
-
-            /* structural: ממלא את המסך; object-cover שומר על יחס גובה-רוחב בלי עיוות */
-            className={cn(
-              "absolute inset-0 h-full w-full object-cover transition-opacity motion-reduce:transition-none",
-              isActive && s ? "opacity-100" : "opacity-0",
-              calm ? "duration-0" : "duration-[420ms]"
-            )}
-            style={{ zIndex: isActive ? 1 : 0 }}
-          />
-        );
-      })}
-
-      {/* טעינה מוקדמת אמיתית של הקטע הבא — לא display:none, אחרת הדפדפן מדלל את הטעינה */}
-      {preloadSrc && (
-        <>
-          <link rel="preload" as="video" href={preloadSrc} />
-          <video
-            src={preloadSrc}
-            preload="auto"
-            muted
-            playsInline
-            aria-hidden
-            tabIndex={-1}
-            className="pointer-events-none absolute h-px w-px opacity-0"
-          />
-        </>
-      )}
-
-
-
-
-      {/* סקרים כיווני — מוקטן במכוון (‎~30% פחות אטימות מהמקור) כדי שהווידאו
-          יישאר גלוי; הקריאוּת מוחזרת ע"י text-shadow על הטקסט עצמו. */}
+      {/* סקרים כיווני — מוקטן במכוון כדי שהווידאו יישאר גלוי;
+          הקריאוּת מוחזרת ע"י text-shadow על הטקסט עצמו. */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 transition-opacity duration-700 max-md:hidden"
+        className="pointer-events-none absolute inset-0 z-[3] transition-opacity duration-700 max-md:hidden"
         style={{
           background:
             "linear-gradient(to left,hsl(var(--stage)/0.72) 0%,hsl(var(--stage)/0.5) 20%,hsl(var(--stage)/0.2) 42%,transparent 62%)," +
@@ -642,7 +690,7 @@ function Stage({
       />
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 md:hidden"
+        className="pointer-events-none absolute inset-0 z-[3] md:hidden"
         style={{
           background:
             "linear-gradient(to top,hsl(var(--stage)/0.82) 0%,hsl(var(--stage)/0.46) 30%,transparent 62%)," +
@@ -653,7 +701,7 @@ function Stage({
       {/* גרעין פילם */}
       <div
         aria-hidden
-        className="pointer-events-none absolute -inset-1/2 animate-grain opacity-[0.045] motion-reduce:animate-none"
+        className="pointer-events-none absolute -inset-1/2 z-[4] animate-grain opacity-[0.045] motion-reduce:animate-none"
         style={{
           backgroundImage:
             "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E\")",
@@ -662,11 +710,34 @@ function Stage({
       {/* ויניית */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0"
+        className="pointer-events-none absolute inset-0 z-[5]"
         style={{ background: "radial-gradient(125% 95% at 50% 45%,transparent 38%,hsl(0 0% 0%/0.38) 78%,hsl(0 0% 0%/0.72) 100%)" }}
       />
       {/* מעמעם לפי גלילה */}
-      <div aria-hidden className="pointer-events-none absolute inset-0 bg-stage transition-opacity duration-500" style={{ opacity: dim }} />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 z-[6] bg-stage transition-opacity duration-500"
+        style={{ opacity: dim }}
+      />
+
+      {/* אבחון: מוצג רק כשקטע באמת נכשל בטעינה */}
+      {mediaError && (
+        <div
+          role="status"
+          className="pointer-events-auto fixed bottom-6 left-1/2 z-[210] flex max-w-[min(560px,92vw)] -translate-x-1/2 items-center gap-3 rounded-2xl border border-destructive/50 bg-[hsl(225_29%_6%/0.96)] px-4 py-3 text-[13px] text-ink-2 backdrop-blur-md"
+        >
+          <strong className="shrink-0 font-bold text-destructive-foreground">קטע וידאו לא נטען</strong>
+          <span className="leading-relaxed break-all">{mediaError}</span>
+          <button
+            type="button"
+            onClick={() => setMediaError(null)}
+            aria-label="סגירה"
+            className="ms-auto shrink-0 text-xl leading-none text-ink-3 transition-colors hover:text-foreground"
+          >
+            ×
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -836,6 +907,9 @@ function PageRail({
         /* נייד — תחתית המסך, ממורכז אופקית, קומפקטי עם רקע מטושטש לקריאוּת מעל תוכן */
         "max-md:left-1/2 max-md:top-auto max-md:bottom-[calc(var(--frame)+8px)] max-md:-translate-x-1/2 max-md:translate-y-0",
         "max-md:gap-1 max-md:rounded-[18px] max-md:bg-stage/55 max-md:px-1.5 max-md:py-2 max-md:ring-1 max-md:ring-gold/15 max-md:backdrop-blur-md",
+        /* תשעה פסים ברוחב קבוע גלשו מעבר ל-375px והתנגשו בכפתור הוואטסאפ.
+           רוחב מוגבל + פסים גמישים פותרים את זה בכל רוחב מסך. */
+        "max-md:w-[min(300px,calc(100vw-160px))]",
         hidden && "pointer-events-none opacity-0",
         hideOnMobile && "max-md:pointer-events-none max-md:opacity-0"
       )}
@@ -850,14 +924,14 @@ function PageRail({
       </div>
 
       {/* פסי הסולם — אנכי בדסקטופ, פס-לצד-פס בנייד */}
-      <div className="flex flex-col gap-[10px] max-md:flex-row max-md:gap-[10px]">
+      <div className="flex flex-col gap-[10px] max-md:w-full max-md:flex-row max-md:justify-center max-md:gap-[6px]">
         {MENU.map((m) => (
           <button
             key={m.p}
             onClick={() => onGoto(m.p)}
             aria-label={`עמוד ${m.p} · ${m.name}`}
             aria-current={page === m.p ? "true" : undefined}
-            className="group flex h-[28px] w-[44px] cursor-pointer items-center justify-center rounded-full py-[5px] transition-transform duration-300 ease-cinematic hover:scale-110 max-md:h-[22px] max-md:w-[30px] max-md:py-0"
+            className="group flex h-[28px] w-[44px] cursor-pointer items-center justify-center rounded-full py-[5px] transition-transform duration-300 ease-cinematic hover:scale-110 max-md:h-[22px] max-md:w-auto max-md:min-w-0 max-md:max-w-[30px] max-md:flex-1 max-md:py-0"
           >
             <span
               className={cn(
@@ -1067,7 +1141,8 @@ type Phase = "acts" | "gate" | "open";
 
 export default function StudioAviSite() {
   const calm = useReducedMotion();
-  const [small, setSmall] = useState(false);
+  /** true = מציגים פריים אחרון קפוא במקום לנגן (קפיצה בסרגל העמודים) */
+  const [still, setStill] = useState(false);
   const [phase, setPhase] = useState<Phase>("acts");
   const [act, setAct] = useState<1 | 2 | 3>(1);
   const [page, setPage] = useState(1);
@@ -1082,14 +1157,6 @@ export default function StudioAviSite() {
   const [playId, setPlayId] = useState(0);
   const onEndRef = useRef<(() => void) | null>(null);
 
-  useEffect(() => {
-    const mq = window.matchMedia("(max-width: 900px)");
-    const on = () => setSmall(mq.matches);
-    on();
-    mq.addEventListener("change", on);
-    return () => mq.removeEventListener("change", on);
-  }, []);
-
   /* נעילת גלילה בזמן הפתיח / התפריט */
   useEffect(() => {
     const locked = phase !== "open" || menuOpen;
@@ -1097,22 +1164,42 @@ export default function StudioAviSite() {
     return () => document.body.classList.remove("is-locked");
   }, [phase, menuOpen]);
 
+  /** ניגון מכוון: הקטע רץ פעם אחת ונעצר קפוא על הפריים האחרון. אין loop. */
+  const playClip = useCallback((name: string, onEnd: () => void) => {
+    setPlaying(true);
+    onEndRef.current = onEnd;
+    setStill(false);
+    setPlayId((n) => n + 1);
+    setClip(name);
+  }, []);
+
+  /** רקע: מנגן פעם אחת ונעצר, בלי לחסום כפתורים ובלי callback */
+  const playBackground = useCallback((name: string) => {
+    onEndRef.current = null;
+    setPlaying(false);
+    setStill(false);
+    setPlayId((n) => n + 1);
+    setClip(name);
+  }, []);
+
+  /** רקע סטטי: קופץ ישר לפריים האחרון בלי לנגן מחדש */
+  const showStill = useCallback((name: string | null) => {
+    onEndRef.current = null;
+    setPlaying(false);
+    setStill(true);
+    setPlayId((n) => n + 1);
+    setClip(name);
+  }, []);
+
   /* העדפת תנועה מופחתת — דילוג ישיר לאתר */
   useEffect(() => {
     if (calm && phase === "acts") {
       setPhase("open");
-      setClip("s6");
+      showStill("s6");
       setPage(4);
       setDim(0.58);
     }
-  }, [calm, phase]);
-
-  const playClip = useCallback((name: string, onEnd: () => void) => {
-    setPlaying(true);
-    onEndRef.current = onEnd;
-    setPlayId((n) => n + 1);
-    setClip(name);
-  }, []);
+  }, [calm, phase, showStill]);
 
   const handleEnded = useCallback(() => {
     setPlaying(false);
@@ -1155,10 +1242,11 @@ export default function StudioAviSite() {
     setPhase("acts");
     playClip("s5", () => {
       setPhase("open");
-      setClip("s6");
       setShowCue(true);
+      /* קטע הסיום מתנגן פעם אחת ונעצר על הפריים האחרון כרקע האתר */
+      playBackground("s6");
     });
-  }, [playClip]);
+  }, [playClip, playBackground]);
 
   /* ניווט חופשי עם מצמוץ שחור */
   const jumpTo = useCallback(
@@ -1167,22 +1255,22 @@ export default function StudioAviSite() {
       /* ביטול מיידי של מעבר שרץ — כדי שלא יופעל callback ישן אחרי הקפיצה */
       onEndRef.current = null;
       setPlaying(false);
-      setPlayId((id) => id + 1);
       setBlink(true);
       window.setTimeout(() => {
         setMenuOpen(false);
         if (n <= 3) {
           setPhase("acts");
           setAct(n as 1 | 2 | 3);
-          setClip(n === 1 ? null : ACTS[n - 2].clip);
-          setPlaying(false);
           setDim(0);
           setShowCue(false);
+          /* פריים אחרון קפוא — לא מנגנים מחדש בכל קפיצה */
+          showStill(n === 1 ? null : ACTS[n - 2].clip);
+          window.scrollTo({ top: 0, behavior: "auto" });
         } else {
           setPhase("open");
-          setClip("s6");
+          showStill("s6");
           window.requestAnimationFrame(() => {
-            const el = document.getElementById(MENU[n - 1].name === "פרויקטים" ? "projects" : SECTION_IDS[n] ?? "projects");
+            const el = document.getElementById(SECTION_IDS[n] ?? "projects");
             if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 96, behavior: "auto" });
           });
         }
@@ -1190,7 +1278,7 @@ export default function StudioAviSite() {
         window.setTimeout(() => setBlink(false), 16);
       }, 150);
     },
-    []
+    [showStill]
   );
 
   /* גלילה: מונה עמודים, פס התקדמות, עמעום */
@@ -1232,7 +1320,7 @@ export default function StudioAviSite() {
 
   return (
     <div dir="rtl" className="relative min-h-[100dvh] bg-background text-foreground">
-      <Stage clip={clip} playId={playId} loop={clip === "s6"} onEnded={handleEnded} dim={dim} small={small} />
+      <Stage clip={clip} playId={playId} still={still} onEnded={handleEnded} dim={dim} />
 
       {/* מצמוץ מעבר */}
       <div

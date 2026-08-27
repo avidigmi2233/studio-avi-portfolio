@@ -195,17 +195,21 @@
     border-color: var(--color-border);
   }
 
+  /* overflow-x חייב להיות hidden ולא clip: לפי מפרט CSS, כשציר אחד הוא clip
+     הציר השני (visible) הופך גם הוא ל-clip — וזה מבטל את גלילת העמוד לגמרי.
+     hidden הופך את הציר השני ל-auto, כלומר הגלילה האנכית נשמרת.
+     ב-body אין overflow בכלל; הגזירה האופקית נעשית ב-html בלבד. */
   html {
     -webkit-text-size-adjust: 100%;
-    overflow-x: clip;
+    overflow-x: hidden;
   }
 
   body {
+    max-width: 100%;
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family: "Polin", "Arial Hebrew", system-ui, sans-serif;
     font-synthesis: none;
-    overflow-x: clip;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }

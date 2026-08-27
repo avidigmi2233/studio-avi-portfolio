@@ -177,6 +177,7 @@ const VideoStage = {
   ac: null,           // מבטל את המאזינים של הבקשה הקודמת
   current: null,      // שם הקטע המוצג
   failTimer: 0,
+  fadeTimer: 0,       // טיימר הקרוספייד — חייב להתבטל בבקשה חדשה
 
   /** עוצר הכול וחוזר לפוסטר */
   clear() {
@@ -211,6 +212,13 @@ const VideoStage = {
     this.ac = new AbortController();
     const { signal } = this.ac;
     clearTimeout(this.failTimer);
+    /* טיימר קרוספייד תלוי-ועומד היה דורס את ה-src של הבקשה החדשה */
+    if (this.fadeTimer) {
+      clearTimeout(this.fadeTimer);
+      this.fadeTimer = 0;
+      const prev = videos[this.activeIdx === 0 ? 1 : 0];
+      if (prev && !prev.classList.contains("is-active")) prev.pause();
+    }
 
     const inIdx = this.activeIdx === 0 ? 1 : 0;
     const outIdx = this.activeIdx;
@@ -219,7 +227,16 @@ const VideoStage = {
 
     /* אם אותו קטע כבר מוצג — לא טורפים את המסך */
     if (this.current === name && outEl) {
-      if (still) return;                       // כבר מוצג, אין מה לעשות
+      if (still) {
+        /* קפיצה לעמוד שכבר מוצג בזמן שהקטע רץ — עוצרים על הפריים האחרון */
+        outEl.pause();
+        outEl.loop = false;
+        const d = outEl.duration;
+        if (isFinite(d) && d > 0) {
+          try { outEl.currentTime = Math.max(0, d - 0.05); } catch (_) {}
+        }
+        return;
+      }
       if (onEnd) this.bindEnd(outEl, myToken, onEnd, signal);
       try { outEl.currentTime = 0; } catch (_) {}
       outEl.play().catch(() => {});
@@ -250,7 +267,8 @@ const VideoStage = {
 
       if (outEl && outEl !== inEl) {
         const delay = calm() ? 0 : 460;
-        setTimeout(() => {
+        this.fadeTimer = setTimeout(() => {
+          this.fadeTimer = 0;
           /* רק אם בינתיים לא חזר להיות הפעיל */
           if (this.activeIdx === inIdx) {
             outEl.classList.remove("is-active");
