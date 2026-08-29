@@ -7,6 +7,12 @@
    ========================================================================== */
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Link } from "@tanstack/react-router";
+import { SITE } from "@/config/site";
+import { PRIVACY_VERSION, TERMS_VERSION } from "@/content/legal/versions";
+import { useConsent } from "@/lib/consent/ConsentProvider";
+import { readAttribution } from "@/lib/tracking";
+import { LegalNav } from "@/components/legal/LegalNav";
 import {
   ArrowDown, ArrowUpRight, Plus, RotateCcw,
   Film, Boxes, Target, ShoppingBag, Palette,
@@ -21,8 +27,8 @@ gsap.registerPlugin(ScrollTrigger);
 /* ========================== תוכן ========================== */
 
 const TOTAL_PAGES = 9;
-const CONTACT_EMAIL = "avidigmi14@gmail.com";
-const WHATSAPP = `https://wa.me/972556696675?text=${encodeURIComponent("היי אבי הגעתי מהאתר :) אשמח לפרטים בנוגע ל..")}`;
+const CONTACT_EMAIL = SITE.contactEmail;
+const WHATSAPP = `${SITE.whatsapp}?text=${encodeURIComponent("היי אבי הגעתי מהאתר :) אשמח לפרטים בנוגע ל..")}`;
 
 /* ===== נכסי מדיה =====
    הקטעים מוגשים מקומית ב-H.264 8-bit (baseline נתמך בכל דפדפן).
@@ -1346,7 +1352,7 @@ export default function StudioAviSite() {
 
       {/* ====== המערכות (1–3) ====== */}
       {phase === "acts" && (
-        <div className="pointer-events-none fixed inset-0 z-30">
+        <main id="main" className="pointer-events-none fixed inset-0 z-30">
           <section
             key={act}
             className="absolute inset-0 grid content-end justify-items-start px-[var(--gut)] pb-[clamp(124px,16vh,172px)] max-md:content-start max-md:justify-items-center max-md:pt-[clamp(96px,18vh,132px)] max-md:pb-[clamp(190px,28vh,240px)]"
@@ -1398,19 +1404,19 @@ export default function StudioAviSite() {
               </div>
             </div>
           </section>
-        </div>
+        </main>
       )}
 
       {/* ====== שער הפרויקטים ====== */}
       {phase === "gate" && (
-        <div className="relative z-10 grid min-h-[100dvh] content-center px-[var(--gut)] py-[clamp(74px,9vh,104px)] max-md:pb-[132px]">
+        <main id="main" className="relative z-10 grid min-h-[100dvh] content-center px-[var(--gut)] py-[clamp(74px,9vh,104px)] max-md:pb-[132px]">
           <div className="mx-auto mb-[clamp(24px,3vw,36px)] grid max-w-[720px] justify-items-center gap-5 text-center">
             <p className="flex items-center gap-3.5 text-[12.5px] tracking-[0.32em] text-gold-hi">
               <span className="h-px w-[60px] bg-gold/20" />
               הפורטפוליו
               <span className="h-px w-[60px] bg-gold/20" />
             </p>
-            <h2 className="font-display text-[clamp(32px,4.8vw,64px)] font-bold leading-[1.08] tracking-[-0.02em]">פרויקטים אחרונים</h2>
+            <h1 className="font-display text-[clamp(32px,4.8vw,64px)] font-bold leading-[1.08] tracking-[-0.02em]">פרויקטים אחרונים</h1>
           </div>
           <div className="mx-auto grid w-full max-w-[1080px] grid-cols-3 items-start gap-[clamp(20px,3vw,44px)] max-md:grid-cols-1 max-md:gap-8">
             {PROJECTS.map((p, i) => (
@@ -1428,7 +1434,7 @@ export default function StudioAviSite() {
               המשיכו הלאה
             </CineButton>
           </div>
-        </div>
+        </main>
       )}
 
       {/* ====== האתר המלא (4–9) ====== */}
@@ -1453,7 +1459,10 @@ function Story({ onRestart }: { onRestart: () => void }) {
   const scope = useRef<HTMLElement>(null);
   useGsapReveal(scope);
   return (
-    <main ref={scope} className="relative z-10 max-md:pb-[150px]">
+    <main id="main" ref={scope} className="relative z-10 max-md:pb-[150px]">
+      {/* h1 יחיד לשלב הזה. שלושת השלבים אינם מוצגים במקביל, ולכן בכל רגע
+          נתון יש בדיוק main אחד ו-h1 אחד. */}
+      <h1 className="sr-only">סטודיו אבי · אתרי תדמית קולנועיים בתלת מימד</h1>
       <Projects />
       <About />
       <Services />
@@ -1799,31 +1808,79 @@ function Faq() {
 }
 
 function Contact() {
+  const { record: cookieConsent } = useConsent();
   const [sent, setSent] = useState(false);
   const [name, setName] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const openedAt = useRef<number>(Date.now());
+  const successRef = useRef<HTMLDivElement>(null);
+
+  // הודעת ההצלחה מקבלת פוקוס, אחרת מי שמנווט במקלדת נשאר על כפתור שנעלם
+  useEffect(() => {
+    if (sent) successRef.current?.focus();
+  }, [sent]);
 
   const submit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const fd = new FormData(e.currentTarget);
+    const form = e.currentTarget;
+    const fd = new FormData(form);
     const d = Object.fromEntries(fd.entries()) as Record<string, string>;
+
+    // שדה דבש + זמן מילוי: בוט ממלא שדה מוסתר או שולח מיידית.
+    // מציגים לו הצלחה ולא שולחים כלום, כדי לא ללמד אותו מה נכשל.
+    const looksAutomated =
+      Boolean((d.company ?? "").trim()) || Date.now() - openedAt.current < 2000;
+
     const err: Record<string, string> = {};
     if ((d.name ?? "").trim().length < 2) err.name = "איך קוראים לכם?";
     if (!/^[0-9+\-\s()]{9,15}$/.test((d.phone ?? "").trim())) err.phone = "מספר טלפון לא תקין";
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test((d.email ?? "").trim())) err.email = "כתובת אימייל לא תקינה";
     if (!d.type) err.type = "בחרו סוג פרויקט";
+    if (d.terms !== "on") err.terms = "יש לאשר את תנאי השימוש ומדיניות הפרטיות כדי לשלוח";
     setErrors(err);
-    if (Object.keys(err).length) return;
 
-    // TODO: להחליף בקריאה לשירות טפסים אמיתי (Formspree / Supabase edge function)
-    const body = `שם: ${d.name}\nטלפון: ${d.phone}\nאימייל: ${d.email}\nסוג פרויקט: ${d.type}\nתקציב: ${d.budget || "לא צוין"}\n\n${d.message || ""}`;
-    window.location.href = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent("פנייה חדשה מהאתר · " + d.name)}&body=${encodeURIComponent(body)}`;
+    if (Object.keys(err).length) {
+      const firstBad = Object.keys(err)[0];
+      form.querySelector<HTMLElement>(`[name="${firstBad}"]`)?.focus();
+      return;
+    }
+
     setName((d.name ?? "").trim().split(" ")[0]);
     setSent(true);
+    if (looksAutomated) return;
+
+    // רשומת ההסכמה נוסעת יחד עם הפנייה — היא הראיה שהתנאים אושרו.
+    const snapshot = {
+      termsVersion: TERMS_VERSION,
+      privacyVersion: PRIVACY_VERSION,
+      acceptedTerms: true,
+      acceptedAt: new Date().toISOString(),
+      pageUrl: window.location.pathname,
+      cookieConsent,
+    };
+    const attribution = readAttribution();
+
+    const body = [
+      `שם: ${d.name}`,
+      `טלפון: ${d.phone}`,
+      `אימייל: ${d.email}`,
+      `סוג פרויקט: ${d.type}`,
+      `תקציב: ${d.budget || "לא צוין"}`,
+      "",
+      d.message || "",
+      "",
+      "— תיעוד הסכמה —",
+      JSON.stringify(snapshot),
+      "— מקור הגעה —",
+      JSON.stringify(attribution),
+    ].join("\n");
+
+    window.location.href = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent("פנייה חדשה מהאתר · " + d.name)}&body=${encodeURIComponent(body)}`;
   };
 
   const field = "w-full rounded-xl border border-foreground/15 bg-foreground/[0.04] px-4 py-[15px] text-[15.5px] outline-none transition-[border-color,background,box-shadow] focus:border-gold focus:bg-gold/[0.08] focus:shadow-[0_0_0_4px_hsl(var(--gold)/0.12)]";
   const label = "mb-2.5 block text-xs tracking-[0.14em] text-ink-3";
+  const errCls = "mt-2 block text-[13px] not-italic text-destructive-foreground";
 
   return (
     <section id="contact" className={cn(secCls, "max-w-[1340px] py-[clamp(120px,18vh,210px)]")}>
@@ -1851,7 +1908,7 @@ function Contact() {
           <ul data-rv="220" className="mt-9 grid gap-[18px]">
             {["חזרה תוך 24 שעות, מבן אדם אמיתי", "הצעת מחיר מפורטת ללא עלות", "מספר פרויקטים מוגבל בכל רבעון"].map((t) => (
               <li key={t} className="flex items-center gap-[15px] text-[15.5px] text-ink-2">
-                <i className="h-1.5 w-1.5 shrink-0 rotate-45 bg-gold shadow-[0_0_14px_hsl(var(--gold))]" />
+                <i aria-hidden className="h-1.5 w-1.5 shrink-0 rotate-45 bg-gold shadow-[0_0_14px_hsl(var(--gold))]" />
                 {t}
               </li>
             ))}
@@ -1874,6 +1931,7 @@ function Contact() {
               "shadow-[0_60px_140px_-50px_hsl(0_0%_0%/1),0_0_110px_-55px_hsl(var(--gold)/0.5)]",
               sent && "pointer-events-none scale-[0.97] opacity-0"
             )}
+            inert={sent}
           >
           <div
             className={cn(
@@ -1889,12 +1947,24 @@ function Contact() {
             <p className="mt-3 text-[15px] text-ink-3">ואחזור אליכם עם רעיון ראשון לפרויקט</p>
 
             <form onSubmit={submit} noValidate>
+              {/* שדה דבש — מוסתר מבני אדם ומקוראי מסך, גלוי לבוטים בלבד */}
+              <div aria-hidden className="absolute -left-[9999px] top-0 h-px w-px overflow-hidden">
+                <label htmlFor="f-company">אל תמלאו שדה זה</label>
+                <input id="f-company" name="company" type="text" tabIndex={-1} autoComplete="off" />
+              </div>
+
               <div className="mt-[22px]">
                 <label className={label} htmlFor="f-name">
                   שם מלא <b className="font-normal text-gold">*</b>
                 </label>
-                <input id="f-name" name="name" type="text" autoComplete="name" placeholder="ישראל ישראלי" className={cn(field, errors.name && "border-destructive bg-destructive/10")} />
-                {errors.name && <em className="mt-2 block text-[12.5px] not-italic text-destructive-foreground">{errors.name}</em>}
+                <input
+                  id="f-name" name="name" type="text" autoComplete="name" placeholder="ישראל ישראלי"
+                  required
+                  aria-invalid={errors.name ? true : undefined}
+                  aria-describedby={errors.name ? "e-name" : undefined}
+                  className={cn(field, errors.name && "border-destructive bg-destructive/10")}
+                />
+                {errors.name && <em id="e-name" className={errCls}>{errors.name}</em>}
               </div>
 
               <div className="grid grid-cols-2 gap-[18px] max-md:grid-cols-1 max-md:gap-0">
@@ -1902,15 +1972,27 @@ function Contact() {
                   <label className={label} htmlFor="f-phone">
                     טלפון <b className="font-normal text-gold">*</b>
                   </label>
-                  <input id="f-phone" name="phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="050-0000000" className={cn(field, errors.phone && "border-destructive bg-destructive/10")} />
-                  {errors.phone && <em className="mt-2 block text-[12.5px] not-italic text-destructive-foreground">{errors.phone}</em>}
+                  <input
+                    id="f-phone" name="phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="050-0000000"
+                    required
+                    aria-invalid={errors.phone ? true : undefined}
+                    aria-describedby={errors.phone ? "e-phone" : undefined}
+                    className={cn(field, errors.phone && "border-destructive bg-destructive/10")}
+                  />
+                  {errors.phone && <em id="e-phone" className={errCls}>{errors.phone}</em>}
                 </div>
                 <div className="mt-[22px]">
                   <label className={label} htmlFor="f-email">
                     אימייל <b className="font-normal text-gold">*</b>
                   </label>
-                  <input id="f-email" name="email" type="email" autoComplete="email" placeholder="name@mail.com" dir="ltr" className={cn(field, errors.email && "border-destructive bg-destructive/10")} />
-                  {errors.email && <em className="mt-2 block text-[12.5px] not-italic text-destructive-foreground">{errors.email}</em>}
+                  <input
+                    id="f-email" name="email" type="email" autoComplete="email" placeholder="name@mail.com" dir="ltr"
+                    required
+                    aria-invalid={errors.email ? true : undefined}
+                    aria-describedby={errors.email ? "e-email" : undefined}
+                    className={cn(field, errors.email && "border-destructive bg-destructive/10")}
+                  />
+                  {errors.email && <em id="e-email" className={errCls}>{errors.email}</em>}
                 </div>
               </div>
 
@@ -1919,7 +2001,12 @@ function Contact() {
                   <label className={label} htmlFor="f-type">
                     סוג הפרויקט <b className="font-normal text-gold">*</b>
                   </label>
-                  <select id="f-type" name="type" className={cn(field, "cursor-pointer appearance-none ps-11", errors.type && "border-destructive bg-destructive/10")}
+                  <select
+                    id="f-type" name="type"
+                    required
+                    aria-invalid={errors.type ? true : undefined}
+                    aria-describedby={errors.type ? "e-type" : undefined}
+                    className={cn(field, "cursor-pointer appearance-none ps-11", errors.type && "border-destructive bg-destructive/10")}
                     style={{
                       backgroundImage:
                         "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23E8C48A' stroke-width='1.6'/%3E%3C/svg%3E\")",
@@ -1934,7 +2021,7 @@ function Contact() {
                       </option>
                     ))}
                   </select>
-                  {errors.type && <em className="mt-2 block text-[12.5px] not-italic text-destructive-foreground">{errors.type}</em>}
+                  {errors.type && <em id="e-type" className={errCls}>{errors.type}</em>}
                 </div>
                 <div className="mt-[22px]">
                   <label className={label} htmlFor="f-budget">
@@ -1965,7 +2052,51 @@ function Contact() {
                 <textarea id="f-msg" name="message" rows={3} placeholder="מה המותג, מי הקהל, ומה הייתם רוצים שיקרה באתר" className={cn(field, "resize-none leading-[1.75]")} />
               </div>
 
-              <div className="mt-[30px]">
+              {/* הודעת היידוע לפי סעיף 11 לחוק הגנת הפרטיות. טקסט קבוע, לא accordion. */}
+              <p className="mt-[26px] rounded-xl border border-foreground/10 bg-foreground/[0.03] p-4 text-[13.5px] leading-[1.85] text-ink-2">
+                <b className="font-bold text-foreground">לידיעתך:</b> מסירת הפרטים נעשית מרצונך החופשי ואינך חייב
+                למסור אותם על פי דין. הפרטים שתמסור ישמשו את {SITE.legalName} לצורך יצירת קשר ומענה לפנייתך בלבד.
+                המידע יישמר במאגר של העסק ולא יועבר לצדדים שלישיים אלא לספקי תשתית המשמשים את העסק או על פי דין.
+                בכל עת תוכל לפנות אלינו לעיון במידע, לתיקונו או למחיקתו:{" "}
+                <a href={`mailto:${SITE.privacyEmail}`} dir="ltr" className="text-gold underline underline-offset-4 hover:text-gold-hi">
+                  {SITE.privacyEmail}
+                </a>
+                .
+              </p>
+
+              <div className="mt-[18px]">
+                <div className="flex items-start gap-3">
+                  <input
+                    id="f-terms" name="terms" type="checkbox"
+                    required
+                    aria-invalid={errors.terms ? true : undefined}
+                    aria-describedby={errors.terms ? "e-terms" : undefined}
+                    className="mt-1 h-[18px] w-[18px] shrink-0 cursor-pointer accent-[hsl(var(--gold))]"
+                  />
+                  <label htmlFor="f-terms" className="cursor-pointer text-[13.5px] leading-[1.8] text-ink-2">
+                    קראתי ואני מאשר/ת את{" "}
+                    <Link to="/terms" className="text-gold underline underline-offset-4 hover:text-gold-hi">
+                      תנאי השימוש
+                    </Link>{" "}
+                    ואת{" "}
+                    <Link to="/privacy" className="text-gold underline underline-offset-4 hover:text-gold-hi">
+                      מדיניות הפרטיות
+                    </Link>
+                  </label>
+                </div>
+                {errors.terms && (
+                  <em id="e-terms" role="alert" className={cn(errCls, "ms-[30px]")}>
+                    {errors.terms}
+                  </em>
+                )}
+              </div>
+
+              {/* הכרזת השגיאות לקוראי מסך, בנוסף להצמדה לכל שדה */}
+              <p aria-live="polite" className="sr-only">
+                {Object.keys(errors).length ? `בטופס ${Object.keys(errors).length} שגיאות שדורשות תיקון` : ""}
+              </p>
+
+              <div className="mt-[26px]">
                 <CineButton type="submit" full loadingText="שולח···">
                   שלחו את הטופס ונדבר
                 </CineButton>
@@ -1976,8 +2107,13 @@ function Contact() {
           </div>
 
           {sent && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 rounded-3xl border border-gold/35 p-11 text-center backdrop-blur-3xl bg-[linear-gradient(180deg,hsl(225_25%_8%/0.94),hsl(225_29%_3%/0.96))]">
-              <div className="relative h-[66px] w-[66px] rounded-full border border-gold shadow-[0_0_46px_hsl(var(--gold)/0.42)]">
+            <div
+              ref={successRef}
+              tabIndex={-1}
+              role="status"
+              className="absolute inset-0 flex flex-col items-center justify-center gap-4 rounded-3xl border border-gold/35 p-11 text-center backdrop-blur-3xl bg-[linear-gradient(180deg,hsl(225_25%_8%/0.94),hsl(225_29%_3%/0.96))] focus-visible:outline-none"
+            >
+              <div aria-hidden className="relative h-[66px] w-[66px] rounded-full border border-gold shadow-[0_0_46px_hsl(var(--gold)/0.42)]">
                 <span className="absolute left-[21px] top-[22px] h-3 w-6 -rotate-45 border-b-2 border-l-2 border-gold" />
               </div>
               <h3 className="font-display text-3xl font-bold">תודה, {name || "שלכם"}!</h3>
@@ -2034,8 +2170,14 @@ function SiteFooter({ onRestart }: { onRestart: () => void }) {
           </ul>
         </div>
       </div>
-      <div className="mx-auto flex max-w-[1280px] flex-wrap items-center justify-between gap-4 border-t border-foreground/10 px-[var(--gut)] pb-[clamp(96px,12vh,124px)] pt-5 text-[12.5px] text-muted-ink max-md:pb-[260px]">
-        <span>© {new Date().getFullYear()} סטודיו אבי · כל הזכויות שמורות</span>
+      <div className="mx-auto max-w-[1280px] border-t border-foreground/10 px-[var(--gut)] pt-6">
+        <LegalNav className="text-[13px] text-ink-3" />
+      </div>
+      <div className="mx-auto flex max-w-[1280px] flex-wrap items-center justify-between gap-4 px-[var(--gut)] pb-[clamp(96px,12vh,124px)] pt-5 text-[12.5px] text-muted-ink max-md:pb-[260px]">
+        <span>
+          © {new Date().getFullYear()} {SITE.legalName} · ח.פ/ע.מ <span dir="ltr">{SITE.businessId}</span> ·{" "}
+          {SITE.address} · כל הזכויות שמורות
+        </span>
         <button onClick={onRestart} className="inline-flex items-center gap-2 text-[12.5px] tracking-[0.04em] text-gold transition-opacity hover:opacity-75">
           להתחיל את המסע מחדש
           <RotateCcw className="h-3.5 w-3.5" aria-hidden />

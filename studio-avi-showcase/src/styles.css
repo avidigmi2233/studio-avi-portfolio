@@ -132,6 +132,16 @@
     transform: none;
   }
 }
+@keyframes bannerIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
 @keyframes cueFloat {
   0%,
   100% {
@@ -235,5 +245,27 @@
   :root {
     --frame: 8px;
     --frame-r: 9px;
+  }
+}
+
+/* ==========================================================================
+   צמצום תנועה — מסלול חלופי מלא. כשהמשתמש ביקש פחות תנועה, האתר מפסיק
+   לזוז: אנימציות, מעברים, גלילה חלקה ורקעים נעים. התוכן נשאר במקומו
+   ובמצבו הסופי במקום להיעלם.
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto !important;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0.001ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
   }
 }

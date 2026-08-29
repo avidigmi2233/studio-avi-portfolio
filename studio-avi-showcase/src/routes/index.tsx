@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import StudioAviSite from "@/components/StudioAviSite";
+import { SITE } from "@/config/site";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -21,6 +22,7 @@ export const Route = createFileRoute("/")({
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:image", content: "/img/og.jpg" },
     ],
+    links: [{ rel: "canonical", href: `${SITE.origin}/` }],
   }),
   component: StudioAviSite,
 });

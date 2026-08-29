@@ -11,6 +11,12 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { ACCESSIBILITY_WIDGET } from "@/config/site";
+import { ConsentProvider } from "@/lib/consent/ConsentProvider";
+import { ConsentBridge } from "@/components/consent/ConsentBridge";
+import { CookieBanner } from "@/components/consent/CookieBanner";
+import { CookieSettingsButton } from "@/components/consent/CookieSettingsButton";
+import { PreferencesModal } from "@/components/consent/PreferencesModal";
 
 function NotFoundComponent() {
   return (
@@ -100,12 +106,12 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       },
       { rel: "icon", type: "image/png", href: "/favicon.png" },
     ],
-    scripts: [
-      {
-        src: "https://cdn.enable.co.il/licenses/enable-L250910gwmq3j4lk-0324-83630/init.js",
-        defer: true,
-      },
-    ],
+    /* וידג'ט הנגישות מסווג necessary ולכן נטען ללא תנאי: הוא מממש חובה
+       שבדין ואינו כלי מדידה או פרסום. כל שאר סקריפטי צד ג' נטענים אך ורק
+       דרך src/lib/tracking.ts, אחרי הסכמה. */
+    scripts: ACCESSIBILITY_WIDGET.enabled
+      ? [{ src: ACCESSIBILITY_WIDGET.src, defer: true }]
+      : [],
   }),
   shellComponent: RootShell,
   component: RootComponent,
@@ -120,6 +126,13 @@ function RootShell({ children }: { children: ReactNode }) {
         <HeadContent />
       </head>
       <body>
+        {/* ראשון ב-DOM, מוסתר עד שהוא מקבל פוקוס */}
+        <a
+          href="#main"
+          className="sr-only focus:not-sr-only focus:fixed focus:start-4 focus:top-4 focus:z-[300] focus:rounded-full focus:border focus:border-gold focus:bg-stage focus:px-5 focus:py-3 focus:text-[14px] focus:font-bold focus:text-gold"
+        >
+          דילוג לתוכן הראשי
+        </a>
         {children}
         <Scripts />
       </body>
@@ -132,8 +145,14 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <Outlet />
+      <ConsentProvider>
+        <ConsentBridge />
+        {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+        <Outlet />
+        <CookieBanner />
+        <CookieSettingsButton />
+        <PreferencesModal />
+      </ConsentProvider>
     </QueryClientProvider>
   );
 }

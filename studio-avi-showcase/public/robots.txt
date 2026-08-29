@@ -12,3 +12,6 @@ Allow: /
 
 User-agent: *
 Allow: /
+Disallow: /thank-you
+
+Sitemap: https://avidigmi.com/sitemap.xml
