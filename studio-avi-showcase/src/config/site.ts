@@ -16,8 +16,10 @@ export const SITE = {
   /** מספר בפורמט בינלאומי, לקישורי tel: ו-wa.me */
   phoneIntl: "+972556696675",
   whatsapp: "https://wa.me/972556696675",
-  domain: "avidigmi.com",
-  origin: "https://avidigmi.com",
+  /* האתר הזה יושב על studio.avidigmi.com. avidigmi.com הוא אתר אחר
+     (Smart Click) — canonical שמצביע לשם היה מפנה לעמוד שמחזיר 404. */
+  domain: "studio.avidigmi.com",
+  origin: "https://studio.avidigmi.com",
 } as const;
 
 /**

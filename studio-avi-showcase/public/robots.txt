@@ -14,4 +14,4 @@ User-agent: *
 Allow: /
 Disallow: /thank-you
 
-Sitemap: https://avidigmi.com/sitemap.xml
+Sitemap: https://studio.avidigmi.com/sitemap.xml
